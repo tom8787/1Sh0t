@@ -535,7 +535,11 @@ export default function Home() {
     const drag = dragRef.current;
     setItems((previous) => previous.map((item) => item.uid !== drag.uid ? item : drag.resize
       ? { ...item, w: Math.max(54, point.x - item.x), h: Math.max(48, point.y - item.y) }
-      : { ...item, x: Math.max(-item.w * .7, Math.min(W - item.w * .3, point.x - drag.dx)), y: Math.max(86, Math.min(H - 60, point.y - drag.dy)) }));
+      : {
+        ...item,
+        x: Math.max(-item.w * .7, Math.min(W - item.w * .3, point.x - drag.dx)),
+        y: Math.max(0, Math.min(H - item.h * .3, point.y - drag.dy)),
+      }));
   };
   const onPointerUp = (event: PointerEvent<HTMLCanvasElement>) => {
     if (dragRef.current && event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);

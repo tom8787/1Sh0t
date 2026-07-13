@@ -1,51 +1,51 @@
-# Design QA — Clean canvas overlays
+# Design QA — Text movement into the top row
 
-- Source visual truth 1: `C:\Users\user\AppData\Local\Temp\codex-clipboard-59b1be9b-a721-44b9-80b5-2e717f8858ca.png`
-- Source visual truth 2: `C:\Users\user\AppData\Local\Temp\codex-clipboard-2f9ce04a-56b5-4a60-9dc3-89b86a836621.png`
-- Browser-rendered implementation: `C:\Users\user\Documents\Codex\2026-07-13\sites-plugin-sites-openai-bundled\work\clean-canvas-implementation.png`
-- Combined comparison evidence: `C:\Users\user\Documents\Codex\2026-07-13\sites-plugin-sites-openai-bundled\work\clean-canvas-qa-comparison.png`
+- Source visual truth: `C:\Users\user\AppData\Local\Temp\codex-clipboard-a83b3893-8f97-437d-a33b-f5c236860551.png`
+- Browser-rendered implementation: `C:\Users\user\Documents\Codex\2026-07-13\sites-plugin-sites-openai-bundled\work\text-top-row-implementation.png`
+- Combined focused comparison: `C:\Users\user\Documents\Codex\2026-07-13\sites-plugin-sites-openai-bundled\work\text-top-row-qa-comparison.png`
 - Viewport: 1267 × 712 desktop
-- State: editor loaded with one previously saved outlined weapon and the default canvas background
+- State: a newly added text item selected and dragged from its default lower position to canvas Y = 0
 
 **Findings**
 
-- No actionable P0/P1/P2 mismatch. The requested title and subtitle are absent from the upper-left canvas region.
-- No actionable P0/P1/P2 mismatch. The full-width bottom black bar and both of its text labels are absent; the canvas background now continues to the lower edge.
+- No actionable P0/P1/P2 mismatch. Text can now be dragged into the full top row, including the area that was previously blocked by the 86 px movement limit.
+- The lower movement limit was also updated to match the earlier footer removal, so objects can use the complete canvas height.
 
 **Required Fidelity Surfaces**
 
-- Fonts and typography: The specified `LOADOUT // 特戰收藏`, `PERSONAL ARMORY • LOADOUT LAB`, `SW// LAB`, and `DRAG • SCALE • CREATE` text is no longer rendered. Remaining editor typography is unchanged.
-- Spacing and layout rhythm: Removing the footer restores 58 px of uninterrupted canvas area without shifting objects or changing the 1200 × 760 export size.
-- Colors and visual tokens: The opaque/translucent black footer treatment is removed. The default background grid continues cleanly to the bottom edge.
-- Image quality and asset fidelity: Weapon and uploaded background rendering are unchanged; no image is cropped or rescaled by this change.
-- Copy and content: Only the four user-identified canvas labels were removed. VP/RP remains available in the top-right as an existing account display.
+- Fonts and typography: Existing text rendering, font weight, shadow, size controls, and selection state are unchanged.
+- Spacing and layout rhythm: The text item's top edge reaches canvas Y = 0 while remaining fully visible and selectable.
+- Colors and visual tokens: Existing white text and teal selection treatment remain consistent with the reference state.
+- Image quality and asset fidelity: Existing weapon artwork and canvas background remain sharp and unchanged during drag testing.
+- Copy and content: A realistic `我的特戰收藏` text item was used to verify the requested behavior.
 
 **Full-view Comparison Evidence**
 
-- `clean-canvas-implementation.png` shows the complete editor and confirms the canvas remains functional after removing the overlays.
+- `text-top-row-implementation.png` shows the complete editor after the drag, with the selected text inside the upper canvas row.
 
 **Focused Region Comparison Evidence**
 
-- `clean-canvas-qa-comparison.png` places each unwanted source region beside the corresponding updated region. The upper-left is free of the two title lines, and the lower edge has no footer bar or footer copy.
+- `text-top-row-qa-comparison.png` places the reference and implementation together. Both show a selected text object occupying the black upper row while VP/RP remains visible at the right.
 
 **Comparison History**
 
-- Initial pass: no actionable P0/P1/P2 findings after the requested removal; no follow-up visual fix was required.
+- Earlier P1: vertical drag clamping used `Math.max(86, ...)`, making the top row unreachable.
+- Fix: changed the upper boundary to `0` and made the lower boundary depend on object height instead of the removed 60 px footer.
+- Post-fix evidence: browser drag from the lower canvas to the top row completed successfully and the item rendered at Y = 0.
 
 **Primary Interactions and Runtime Checks**
 
-- Existing saved weapon rendered correctly.
-- Canvas selection/editor state remained usable.
+- Added a text item through the quick action.
+- Dragged the selected text through multiple intermediate points into the top row.
+- Confirmed the text remains selected and editable after the drag.
 - Browser console checked: no errors or warnings; only Vite connection and React development informational logs.
-- PNG export uses the same updated scene renderer, so removed overlays are also absent from exported images.
 
 **Implementation Checklist**
 
-- [x] Remove top-left title
-- [x] Remove top-left subtitle
-- [x] Remove bottom black footer bar
-- [x] Remove both footer labels
-- [x] Preserve canvas dimensions and existing editor behavior
-- [x] Verify in browser and inspect console
+- [x] Remove 86 px top drag restriction
+- [x] Permit text at canvas Y = 0
+- [x] Update lower drag boundary after footer removal
+- [x] Verify real pointer drag in browser
+- [x] Compare reference and implementation together
 
 final result: passed
