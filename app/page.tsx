@@ -102,6 +102,15 @@ function drawContainedImage(ctx: CanvasRenderingContext2D, image: HTMLImageEleme
   ctx.drawImage(image, (w - dw) / 2, (h - dh) / 2, dw, dh);
 }
 
+function drawCoverImage(ctx: CanvasRenderingContext2D, image: HTMLImageElement, w: number, h: number) {
+  const scale = Math.max(w / image.naturalWidth, h / image.naturalHeight);
+  const sourceW = w / scale;
+  const sourceH = h / scale;
+  const sourceX = (image.naturalWidth - sourceW) / 2;
+  const sourceY = (image.naturalHeight - sourceH) / 2;
+  ctx.drawImage(image, sourceX, sourceY, sourceW, sourceH, 0, 0, w, h);
+}
+
 function drawItem(ctx: CanvasRenderingContext2D, item: SceneItem, selected: boolean, image?: HTMLImageElement) {
   ctx.save();
   ctx.translate(item.x + item.w / 2, item.y + item.h / 2);
@@ -191,39 +200,43 @@ function drawScene(
   images?: Map<string, HTMLImageElement>,
 ) {
   ctx.clearRect(0, 0, W, H);
-  const bg = ctx.createLinearGradient(0, 0, W, H);
-  bg.addColorStop(0, "#07131f");
-  bg.addColorStop(.52, "#0b3445");
-  bg.addColorStop(1, "#11182b");
-  ctx.fillStyle = bg;
-  ctx.fillRect(0, 0, W, H);
   if (bgImage) {
-    ctx.globalAlpha = .42;
-    ctx.drawImage(bgImage, 0, 0, W, H);
-    ctx.globalAlpha = 1;
-  }
-  ctx.fillStyle = "rgba(76,242,218,.08)";
-  ctx.beginPath();
-  ctx.moveTo(0, 560);
-  ctx.lineTo(W, 160);
-  ctx.lineTo(W, H);
-  ctx.lineTo(0, H);
-  ctx.fill();
-  ctx.strokeStyle = "rgba(126,236,225,.11)";
-  for (let x = -200; x < W + 200; x += 90) {
+    drawCoverImage(ctx, bgImage, W, H);
+  } else {
+    const bg = ctx.createLinearGradient(0, 0, W, H);
+    bg.addColorStop(0, "#07131f");
+    bg.addColorStop(.52, "#0b3445");
+    bg.addColorStop(1, "#11182b");
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = "rgba(76,242,218,.08)";
     ctx.beginPath();
-    ctx.moveTo(x, H);
-    ctx.lineTo(x + 460, 0);
-    ctx.stroke();
+    ctx.moveTo(0, 560);
+    ctx.lineTo(W, 160);
+    ctx.lineTo(W, H);
+    ctx.lineTo(0, H);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(126,236,225,.11)";
+    for (let x = -200; x < W + 200; x += 90) {
+      ctx.beginPath();
+      ctx.moveTo(x, H);
+      ctx.lineTo(x + 460, 0);
+      ctx.stroke();
+    }
+    for (let y = 120; y < H; y += 84) {
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(W, y);
+      ctx.stroke();
+    }
   }
-  for (let y = 120; y < H; y += 84) {
-    ctx.beginPath();
-    ctx.moveTo(0, y);
-    ctx.lineTo(W, y);
-    ctx.stroke();
+  if (!bgImage) {
+    ctx.fillStyle = "rgba(6,13,23,.86)";
+    ctx.fillRect(0, 0, W, 86);
+  } else {
+    ctx.shadowColor = "rgba(0,0,0,.82)";
+    ctx.shadowBlur = 10;
   }
-  ctx.fillStyle = "rgba(6,13,23,.86)";
-  ctx.fillRect(0, 0, W, 86);
   ctx.fillStyle = "#f4f8fb";
   ctx.font = "800 30px Arial, sans-serif";
   ctx.fillText("LOADOUT // 特戰收藏", 38, 46);
@@ -235,26 +248,16 @@ function drawScene(
   ctx.font = "700 18px Arial, sans-serif";
   ctx.fillText(`VP  ${vp || "0"}     RP  ${rp || "0"}`, W - 40, 52);
   ctx.textAlign = "left";
+  ctx.shadowBlur = 0;
 
-  const slots = [
-    [42, 124, 330, 155, "PRIMARY 01"], [42, 306, 330, 155, "PRIMARY 02"], [42, 488, 330, 155, "SECONDARY"],
-    [414, 124, 330, 155, "PRECISION"], [414, 306, 330, 155, "SIDEARM"], [414, 488, 330, 155, "MELEE"],
-    [786, 124, 180, 300, "PLAYER CARD"], [992, 124, 164, 142, "BUDDY"], [992, 294, 164, 130, "EMBLEM"],
-  ] as const;
-  for (const [x, y, w, h, label] of slots) {
-    ctx.fillStyle = "rgba(248,247,242,.72)";
-    roundedRect(ctx, x, y, w, h, 3);
-    ctx.fill();
-    ctx.strokeStyle = "rgba(255,255,255,.58)";
-    ctx.lineWidth = 1;
-    ctx.stroke();
-    ctx.fillStyle = "rgba(24,38,45,.58)";
-    ctx.font = "700 12px Arial, sans-serif";
-    ctx.fillText(label, x + 14, y + 24);
-  }
   items.forEach((item) => drawItem(ctx, item, item.uid === selected, images?.get(item.uid)));
-  ctx.fillStyle = "rgba(6,13,23,.82)";
-  ctx.fillRect(0, H - 58, W, 58);
+  if (!bgImage) {
+    ctx.fillStyle = "rgba(6,13,23,.82)";
+    ctx.fillRect(0, H - 58, W, 58);
+  } else {
+    ctx.shadowColor = "rgba(0,0,0,.82)";
+    ctx.shadowBlur = 8;
+  }
   ctx.fillStyle = "#7ff4e4";
   ctx.font = "700 13px Arial, sans-serif";
   ctx.fillText("SW// LAB", 38, H - 24);
@@ -263,6 +266,7 @@ function drawScene(
   ctx.font = "500 12px Arial, sans-serif";
   ctx.fillText("DRAG  •  SCALE  •  CREATE", W - 38, H - 24);
   ctx.textAlign = "left";
+  ctx.shadowBlur = 0;
 }
 
 function parseAccessToken(value: string) {
