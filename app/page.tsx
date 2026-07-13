@@ -56,7 +56,13 @@ type ValorantWeapon = {
   skins: ValorantSkin[];
 };
 
-type UtilityTab = "store" | "stats";
+type UtilityTab = "overview" | "store" | "stats";
+
+type WalletBalance = {
+  vp: number;
+  rp: number;
+  kc: number;
+};
 
 type StoreOffer = {
   id: string;
@@ -93,6 +99,11 @@ const H = 760;
 const DEFAULT_THEME_UUID = "5a629df4-4765-0214-bd40-fbb96542941f";
 const CLIENT_PLATFORM = "ew0KCSJwbGF0Zm9ybVR5cGUiOiAiUEMiLA0KCSJwbGF0Zm9ybU9TIjogIldpbmRvd3MiLA0KCSJwbGF0Zm9ybU9TVmVyc2lvbiI6ICIxMC4wLjE5MDQ1LjEuMjU2LjY0Yml0IiwNCgkicGxhdGZvcm1DaGlwc2V0IjogIlVua25vd24iDQp9";
 const RIOT_LOGIN_URL = "https://auth.riotgames.com/authorize?redirect_uri=https%3A%2F%2Fplayvalorant.com%2Fopt_in&client_id=play-valorant-web-prod&response_type=token%20id_token&nonce=1&scope=account%20openid";
+const CURRENCY_IDS = {
+  vp: "85ad13f7-3d1b-5128-9eb2-7cd8ee0b5741",
+  rp: "e59aa87c-4cbf-517a-5983-6e81511be9b7",
+  kc: "85ca954a-41f2-ce94-9b45-8ca3dd39a00d",
+};
 
 const categoryTabs: { key: CatalogCategory; label: string }[] = [
   { key: "all", label: "全部" },
@@ -414,12 +425,14 @@ export default function Home() {
   const [region, setRegion] = useState("ap");
   const [importing, setImporting] = useState(false);
   const [importStatus, setImportStatus] = useState("");
-  const [toolsOpen, setToolsOpen] = useState(false);
-  const [toolsTab, setToolsTab] = useState<UtilityTab>("store");
+  const [activePage, setActivePage] = useState<"editor" | "tools">(() => typeof window !== "undefined" && window.location.hash === "#/tools" ? "tools" : "editor");
+  const [toolsTab, setToolsTab] = useState<UtilityTab>("overview");
   const [toolsLoading, setToolsLoading] = useState(false);
   const [toolsLoaded, setToolsLoaded] = useState(false);
   const [toolsStatus, setToolsStatus] = useState("");
   const [accountName, setAccountName] = useState("我的 Riot 帳號");
+  const [wallet, setWallet] = useState<WalletBalance>({ vp: 0, rp: 0, kc: 0 });
+  const [lastUpdated, setLastUpdated] = useState(0);
   const [storeOffers, setStoreOffers] = useState<StoreOffer[]>([]);
   const [storeRemaining, setStoreRemaining] = useState(0);
   const [storeError, setStoreError] = useState("");
@@ -487,6 +500,18 @@ export default function Home() {
   }, [items]);
 
   useEffect(() => {
+    const syncPage = () => setActivePage(window.location.hash === "#/tools" ? "tools" : "editor");
+    window.addEventListener("hashchange", syncPage);
+    return () => window.removeEventListener("hashchange", syncPage);
+  }, []);
+
+  useEffect(() => {
+    if (!toolsLoaded || storeRemaining <= 0) return;
+    const timer = window.setInterval(() => setStoreRemaining((value) => Math.max(0, value - 60)), 60_000);
+    return () => window.clearInterval(timer);
+  }, [toolsLoaded, storeRemaining]);
+
+  useEffect(() => {
     const liveIds = new Set(items.map((item) => item.uid));
     for (const id of imageRefs.current.keys()) if (!liveIds.has(id)) imageRefs.current.delete(id);
     items.forEach((item) => {
@@ -511,6 +536,25 @@ export default function Home() {
       (!query || `${asset.name} ${asset.label}`.toLocaleLowerCase("zh-TW").includes(query)),
     );
   }, [catalog, category, search]);
+
+  const recentInsights = useMemo(() => {
+    const matches = recentMatches.length;
+    const wins = recentMatches.filter((match) => match.result === "勝利").length;
+    const kills = recentMatches.reduce((total, match) => total + match.kills, 0);
+    const deaths = recentMatches.reduce((total, match) => total + match.deaths, 0);
+    const assists = recentMatches.reduce((total, match) => total + match.assists, 0);
+    const agentCounts = recentMatches.reduce<Record<string, number>>((counts, match) => {
+      counts[match.agent] = (counts[match.agent] || 0) + 1;
+      return counts;
+    }, {});
+    const favoriteAgent = Object.entries(agentCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || "暫無資料";
+    return {
+      winRate: matches ? Math.round(wins / matches * 100) : 0,
+      kd: deaths ? (kills / deaths).toFixed(2) : kills.toFixed(2),
+      averageKda: matches ? `${(kills / matches).toFixed(1)} / ${(deaths / matches).toFixed(1)} / ${(assists / matches).toFixed(1)}` : "— / — / —",
+      favoriteAgent,
+    };
+  }, [recentMatches]);
 
   const current = items.find((item) => item.uid === selected);
   const canOutline = Boolean(current?.imageUrl && ["rifle", "sniper", "sidearm", "melee"].includes(current.type));
@@ -784,12 +828,13 @@ export default function Home() {
         }
         return fetch(`${pdHost}/store/v2/storefront/${encodeURIComponent(puuid)}`, { headers: riotHeaders });
       })();
-      const [storefrontResponse, mmrResponse, historyResponse] = await Promise.all([
+      const [storefrontResponse, walletResponse, mmrResponse, historyResponse] = await Promise.all([
         storefrontPromise,
+        fetch(`${pdHost}/store/v1/wallet/${encodeURIComponent(puuid)}`, { headers: riotHeaders }),
         fetch(`${pdHost}/mmr/v1/players/${encodeURIComponent(puuid)}`, { headers: riotHeaders }),
         fetch(`${pdHost}/match-history/v1/history/${encodeURIComponent(puuid)}?startIndex=0&endIndex=5`, { headers: riotHeaders }),
       ]);
-      if ([storefrontResponse, mmrResponse, historyResponse].every((response) => !response.ok)) {
+      if ([storefrontResponse, walletResponse, mmrResponse, historyResponse].every((response) => !response.ok)) {
         throw new Error("無法讀取帳號資料。請確認帳號分區是否正確，再重新嘗試。");
       }
 
@@ -840,6 +885,21 @@ export default function Home() {
         setStoreOffers([]);
         setStoreRemaining(0);
         setStoreError(`Riot 商城暫時無法讀取（狀態 ${storefrontResponse.status}），請重新登入後再試。`);
+      }
+
+      if (walletResponse.ok) {
+        const walletJson = await walletResponse.json() as { Balances?: Record<string, number> };
+        const balances = walletJson.Balances || {};
+        const nextWallet = {
+          vp: Number(balances[CURRENCY_IDS.vp] || 0),
+          rp: Number(balances[CURRENCY_IDS.rp] || 0),
+          kc: Number(balances[CURRENCY_IDS.kc] || 0),
+        };
+        setWallet(nextWallet);
+        setVp(String(nextWallet.vp));
+        setRp(String(nextWallet.rp));
+      } else {
+        setWallet({ vp: 0, rp: 0, kc: 0 });
       }
 
       if (mmrResponse.ok) {
@@ -917,9 +977,12 @@ export default function Home() {
 
       const missing: string[] = [];
       if (!storefrontLoaded) missing.push("每日商城");
+      if (!walletResponse.ok) missing.push("點數餘額");
       if (!mmrResponse.ok) missing.push("段位");
       if (!historyResponse.ok) missing.push("近期戰績");
       setToolsLoaded(true);
+      setToolsTab("overview");
+      setLastUpdated(Date.now());
       setAuthUrl("");
       setToolsStatus(missing.length ? `已完成，但目前無法讀取：${missing.join("、")}。` : "完成：帳號資料已更新。");
     } catch (error) {
@@ -943,6 +1006,71 @@ export default function Home() {
     </>
   );
 
+  if (activePage === "tools") return (
+    <main className="tools-page-shell">
+      <header className="tools-page-topbar">
+        <a className="tools-back" href="#">← 返回製圖工具</a>
+        <div className="brand"><span className="brand-mark">SW</span><span>LOADOUT LAB</span><i>實用小工具</i></div>
+        <span className="tools-private"><b />本機讀取 · 不儲存憑證</span>
+      </header>
+
+      <section className="tools-page-wrap">
+        <div className="tools-page-hero">
+          <div><span className="eyebrow">ACCOUNT COMMAND CENTER</span><h1>實用小工具</h1><p>每日商城、點數餘額、競技段位與近期戰績，一個頁面快速查看。</p></div>
+          <div className="tools-hero-badge"><span>LIVE</span><strong>RIOT 帳號資料</strong><small>需要本人短效驗證</small></div>
+        </div>
+
+        {!toolsLoaded ? <section className="tools-auth-card">
+          <div className="tools-auth-intro"><span className="eyebrow">CONNECT ACCOUNT</span><h2>連結你的 Riot 帳號</h2><p>驗證只在目前的瀏覽器分頁中使用，關閉或離開後不會保留登入網址。</p></div>
+          <div className="utility-preview utility-preview-three">
+            <div><span>01</span><strong>每日商城</strong><small>今日四個造型、售價與刷新倒數</small></div>
+            <div><span>02</span><strong>帳號總覽</strong><small>VP、RP、王國幣與目前段位</small></div>
+            <div><span>03</span><strong>近期分析</strong><small>勝率、K/D、平均 K/D/A 與常用特務</small></div>
+          </div>
+          <div className="experimental"><strong>帳號本人檢視</strong><p>每日商城使用實驗性遊戲資料來源，Riot 更新後可能需要重新調整；請勿把驗證網址傳給任何人。</p></div>
+          <div className="tools-auth-layout">
+            <ol className="auth-steps"><li><a href={RIOT_LOGIN_URL} target="_blank" rel="noopener noreferrer">開啟 Riot 官方登入頁 ↗</a>並完成登入。</li><li>登入後複製瀏覽器網址列中的<strong>完整網址</strong>。</li><li>貼到右側欄位，選擇帳號分區後讀取資料。</li></ol>
+            <div className="tools-auth-form">
+              <label className="auth-field">驗證網址<textarea value={authUrl} onChange={(event) => setAuthUrl(event.target.value)} placeholder="https://playvalorant.com/opt_in#access_token=…" autoComplete="off" spellCheck={false} /></label>
+              <div className="import-options utility-region"><label>帳號分區<select value={region} onChange={(event) => setRegion(event.target.value)}><option value="ap">亞太 AP（台灣）</option><option value="na">北美 NA</option><option value="eu">歐洲 EU</option><option value="kr">韓國 KR</option><option value="br">巴西 BR</option><option value="latam">拉丁美洲 LATAM</option></select></label></div>
+              {toolsStatus && <div className="import-status">{toolsStatus}</div>}
+              <button className="primary-wide" disabled={toolsLoading || !authUrl.trim()} onClick={() => void loadUtilityData()}>{toolsLoading ? <><span className="spinner" />正在同步帳號資料…</> : "讀取帳號小工具"}</button>
+              <p className="token-note">安全提醒：驗證網址等同短效登入憑證，請勿貼給任何人。</p>
+            </div>
+          </div>
+        </section> : <section className="tools-dashboard">
+          <div className="tools-dashboard-head">
+            <div className="utility-account"><div><span>已連結帳號</span><strong>{accountName}</strong></div><small>{lastUpdated ? `更新於 ${new Date(lastUpdated).toLocaleTimeString("zh-TW", { hour: "2-digit", minute: "2-digit" })}` : "剛剛更新"}</small></div>
+            <button className="tools-refresh" onClick={() => { setToolsLoaded(false); setToolsStatus(""); setAuthUrl(""); }}>重新驗證更新</button>
+          </div>
+          {toolsStatus && <div className={`import-status ${toolsStatus.startsWith("完成") ? "success" : ""}`}>{toolsStatus}</div>}
+          <div className="utility-tabs utility-tabs-three"><button className={toolsTab === "overview" ? "active" : ""} onClick={() => setToolsTab("overview")}>帳號總覽</button><button className={toolsTab === "store" ? "active" : ""} onClick={() => setToolsTab("store")}>每日商城</button><button className={toolsTab === "stats" ? "active" : ""} onClick={() => setToolsTab("stats")}>段位與戰績</button></div>
+
+          {toolsTab === "overview" ? <section className="utility-overview">
+            <div className="balance-grid">
+              <article><span>VALORANT POINTS</span><strong>{wallet.vp.toLocaleString()}</strong><small>VP 特務幣</small></article>
+              <article><span>RADIANITE</span><strong>{wallet.rp.toLocaleString()}</strong><small>RP 輻能點數</small></article>
+              <article><span>KINGDOM CREDITS</span><strong>{wallet.kc.toLocaleString()}</strong><small>KC 王國幣</small></article>
+            </div>
+            <div className="overview-grid">
+              <article className="overview-rank"><div>{rankSummary?.imageUrl ? <img src={rankSummary.imageUrl} alt="" /> : <span>RANK</span>}</div><section><small>目前競技段位</small><strong>{rankSummary?.tier || "暫無段位資料"}</strong><p>{rankSummary ? `${rankSummary.rr} RR · ${rankSummary.wins} 勝 / ${rankSummary.games} 場` : "請重新驗證更新"}</p></section></article>
+              <article className="overview-insights"><div><small>近期勝率</small><strong>{recentInsights.winRate}%</strong></div><div><small>近期 K/D</small><strong>{recentInsights.kd}</strong></div><div><small>平均 K / D / A</small><strong>{recentInsights.averageKda}</strong></div><div><small>近期常用特務</small><strong>{recentInsights.favoriteAgent}</strong></div></article>
+              <article className="overview-store"><div><span className="eyebrow">DAILY STORE</span><h3>今日商城</h3><p>{storeOffers.length ? `已讀取 ${storeOffers.length} 個造型` : "目前沒有商城資料"}</p></div><strong>{storeRemaining ? remainingLabel(storeRemaining) : "—"}</strong><small>距離刷新</small><button onClick={() => setToolsTab("store")}>查看商城 →</button></article>
+              <article className="overview-actions"><span className="eyebrow">QUICK ACTIONS</span><h3>快速查看</h3><button onClick={() => setToolsTab("stats")}>查看最近五場戰績 <span>→</span></button><a href="#">回到收藏製圖 <span>→</span></a></article>
+            </div>
+          </section> : toolsTab === "store" ? <section className="utility-view">
+            <div className="utility-view-head"><div><span className="eyebrow">DAILY STORE</span><h3>今天的每日商城</h3></div><span className="refresh-time">{storeRemaining ? `距離刷新 ${remainingLabel(storeRemaining)}` : "刷新時間暫無資料"}</span></div>
+            {storeOffers.length ? <div className="store-grid">{storeOffers.map((offer) => <article className="store-card" key={offer.id}><div className="store-art">{offer.imageUrl ? <img src={offer.imageUrl} alt="" crossOrigin="anonymous" /> : <span>NO IMAGE</span>}</div><div><small>{offer.weapon}</small><strong>{offer.name}</strong><b>{offer.price ? `${offer.price.toLocaleString()} VP` : "價格暫無資料"}</b></div></article>)}</div> : <div className="utility-empty"><strong>目前無法顯示每日商城</strong><p>{storeError || "請重新驗證更新；若仍無法讀取，請稍後再試。"}</p></div>}
+          </section> : <section className="utility-view stats-view">
+            <div className="rank-card">{rankSummary?.imageUrl ? <img src={rankSummary.imageUrl} alt="" /> : <div className="rank-placeholder">RANK</div>}<div><span>目前競技段位</span><strong>{rankSummary?.tier || "暫無段位資料"}</strong><small>{rankSummary ? `${rankSummary.rr} RR · ${rankSummary.wins} 勝 / ${rankSummary.games} 場` : "請重新驗證更新"}</small></div></div>
+            <div className="match-heading"><div><span className="eyebrow">RECENT MATCHES</span><h3>最近五場戰績</h3></div><span>K / D / A</span></div>
+            {recentMatches.length ? <div className="match-list">{recentMatches.map((match) => <article className={`match-row ${match.result === "勝利" ? "win" : match.result === "敗北" ? "loss" : "draw"}`} key={match.id}><div className="match-agent">{match.agentImageUrl ? <img src={match.agentImageUrl} alt="" /> : <span />}</div><div className="match-main"><strong>{match.result} <b>{match.score}</b></strong><small>{match.mode} · {match.agent}</small></div><div className="match-kda"><strong>{match.kills} / {match.deaths} / {match.assists}</strong><small>{new Date(match.playedAt).toLocaleDateString("zh-TW")}</small></div></article>)}</div> : <div className="utility-empty"><strong>目前沒有近期戰績</strong><p>請確認分區，或稍後重新驗證更新。</p></div>}
+          </section>}
+        </section>}
+      </section>
+    </main>
+  );
+
   return (
     <main className="app-shell">
       <header className="topbar">
@@ -950,7 +1078,7 @@ export default function Home() {
         <div className="top-actions">
           <span className="status-dot" /><span className="privacy-label">本機處理 · 不儲存 Riot 憑證</span>
           <button className="ghost-btn" onClick={openLibrary}>＋ 素材庫</button>
-          <button className="tools-btn" onClick={() => { setToolsOpen(true); setToolsStatus(""); }}>實用小工具</button>
+          <a className="tools-btn" href="#/tools" onClick={() => setToolsStatus("")}>實用小工具</a>
           <button className="import-btn" onClick={openImport}>⇄ Riot 匯入</button>
           <button className="export-btn" onClick={exportPng}>匯出 PNG</button>
         </div>
@@ -1013,34 +1141,6 @@ export default function Home() {
           <div className="catalog-toolbar"><label className="search"><span>⌕</span><input placeholder="搜尋造型名稱或武器" value={search} onChange={(event) => setSearch(event.target.value)} /></label><div className="tabs">{categoryTabs.map((tab) => <button key={tab.key} className={category === tab.key ? "active" : ""} onClick={() => setCategory(tab.key)}>{tab.label}</button>)}</div><span className="result-count">{filtered.length} 項</span></div>
           <div className="modal-grid">{assetList(visibleCount)}</div>
           {visibleCount < filtered.length && <button className="load-more" onClick={() => setVisibleCount((value) => value + 80)}>顯示更多</button>}
-        </section>
-      </div>}
-
-      {toolsOpen && <div className="modal-backdrop" onMouseDown={() => { if (!toolsLoading) { setToolsOpen(false); setAuthUrl(""); } }}>
-        <section className="modal tools-modal" role="dialog" aria-modal="true" aria-label="實用小工具" onMouseDown={(event) => event.stopPropagation()}>
-          <div className="modal-head"><div><span className="eyebrow">ACCOUNT UTILITIES</span><h2>實用小工具</h2></div><button className="close-btn" disabled={toolsLoading} onClick={() => { setToolsOpen(false); setAuthUrl(""); }}>×</button></div>
-          {!toolsLoaded ? <>
-            <div className="experimental"><strong>帳號本人檢視</strong><p>驗證與資料讀取都在你的瀏覽器中完成，不會上傳或儲存登入網址。每日商城使用實驗性遊戲資料來源，Riot 更新後可能暫時失效。</p></div>
-            <div className="utility-preview"><div><span>01</span><strong>每日商城</strong><small>查看本日四個武器造型與售價</small></div><div><span>02</span><strong>段位與戰績</strong><small>查看目前階級、RR 與最近五場</small></div></div>
-            <ol className="auth-steps"><li><a href={RIOT_LOGIN_URL} target="_blank" rel="noopener noreferrer">開啟 Riot 官方登入頁 ↗</a>，完成登入。</li><li>登入後複製瀏覽器網址列中的<strong>完整網址</strong>。</li><li>貼到下方，選擇帳號分區後讀取資料。</li></ol>
-            <label className="auth-field">驗證網址<textarea value={authUrl} onChange={(event) => setAuthUrl(event.target.value)} placeholder="https://playvalorant.com/opt_in#access_token=…" autoComplete="off" spellCheck={false} /></label>
-            <div className="import-options utility-region"><label>帳號分區<select value={region} onChange={(event) => setRegion(event.target.value)}><option value="ap">亞太 AP（台灣）</option><option value="na">北美 NA</option><option value="eu">歐洲 EU</option><option value="kr">韓國 KR</option><option value="br">巴西 BR</option><option value="latam">拉丁美洲 LATAM</option></select></label></div>
-            {toolsStatus && <div className="import-status">{toolsStatus}</div>}
-            <button className="primary-wide" disabled={toolsLoading || !authUrl.trim()} onClick={() => void loadUtilityData()}>{toolsLoading ? <><span className="spinner" />正在同步帳號資料…</> : "讀取實用小工具"}</button>
-            <p className="token-note">安全提醒：驗證網址等同短效登入憑證，請勿貼給任何人；關閉視窗時會立即清除。</p>
-          </> : <>
-            <div className="utility-account"><div><span>已連結帳號</span><strong>{accountName}</strong></div><button onClick={() => { setToolsLoaded(false); setToolsStatus(""); }}>重新驗證更新</button></div>
-            {toolsStatus && <div className={`import-status ${toolsStatus.startsWith("完成") ? "success" : ""}`}>{toolsStatus}</div>}
-            <div className="utility-tabs"><button className={toolsTab === "store" ? "active" : ""} onClick={() => setToolsTab("store")}>每日商城</button><button className={toolsTab === "stats" ? "active" : ""} onClick={() => setToolsTab("stats")}>段位與戰績</button></div>
-            {toolsTab === "store" ? <section className="utility-view">
-              <div className="utility-view-head"><div><span className="eyebrow">DAILY STORE</span><h3>今天的每日商城</h3></div><span className="refresh-time">{storeRemaining ? `距離刷新 ${remainingLabel(storeRemaining)}` : "刷新時間暫無資料"}</span></div>
-              {storeOffers.length ? <div className="store-grid">{storeOffers.map((offer) => <article className="store-card" key={offer.id}><div className="store-art">{offer.imageUrl ? <img src={offer.imageUrl} alt="" crossOrigin="anonymous" /> : <span>NO IMAGE</span>}</div><div><small>{offer.weapon}</small><strong>{offer.name}</strong><b>{offer.price ? `${offer.price.toLocaleString()} VP` : "價格暫無資料"}</b></div></article>)}</div> : <div className="utility-empty"><strong>目前無法顯示每日商城</strong><p>{storeError || "請重新驗證更新；若仍無法讀取，請稍後再試。"}</p></div>}
-            </section> : <section className="utility-view stats-view">
-              <div className="rank-card">{rankSummary?.imageUrl ? <img src={rankSummary.imageUrl} alt="" /> : <div className="rank-placeholder">RANK</div>}<div><span>目前競技段位</span><strong>{rankSummary?.tier || "暫無段位資料"}</strong><small>{rankSummary ? `${rankSummary.rr} RR · ${rankSummary.wins} 勝 / ${rankSummary.games} 場` : "請重新驗證更新"}</small></div></div>
-              <div className="match-heading"><div><span className="eyebrow">RECENT MATCHES</span><h3>最近五場戰績</h3></div><span>K / D / A</span></div>
-              {recentMatches.length ? <div className="match-list">{recentMatches.map((match) => <article className={`match-row ${match.result === "勝利" ? "win" : match.result === "敗北" ? "loss" : "draw"}`} key={match.id}><div className="match-agent">{match.agentImageUrl ? <img src={match.agentImageUrl} alt="" /> : <span />}</div><div className="match-main"><strong>{match.result} <b>{match.score}</b></strong><small>{match.mode} · {match.agent}</small></div><div className="match-kda"><strong>{match.kills} / {match.deaths} / {match.assists}</strong><small>{new Date(match.playedAt).toLocaleDateString("zh-TW")}</small></div></article>)}</div> : <div className="utility-empty"><strong>目前沒有近期戰績</strong><p>請確認分區，或稍後重新驗證更新。</p></div>}
-            </section>}
-          </>}
         </section>
       </div>}
 
