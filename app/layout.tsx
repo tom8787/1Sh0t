@@ -3,12 +3,12 @@ import { headers } from "next/headers";
 import "./globals.css";
 
 export async function generateMetadata(): Promise<Metadata> {
-  const h = await headers();
-  const host = h.get("x-forwarded-host") || h.get("host") || "localhost:3000";
-  const protocol = h.get("x-forwarded-proto") || (host.includes("localhost") ? "http" : "https");
+  const requestHeaders = await headers();
+  const host = requestHeaders.get("x-forwarded-host") || requestHeaders.get("host") || "localhost:3000";
+  const protocol = requestHeaders.get("x-forwarded-proto") || (host.includes("localhost") ? "http" : "https");
   const base = new URL(`${protocol}://${host}`);
-  const title = "Loadout Lab｜特戰收藏製圖工具";
-  const description = "免費的特戰收藏展示圖製作工具。挑選素材、自由排版、加入點數資訊並匯出高清 PNG。";
+  const title = "Loadout Lab｜特戰製圖與造型匯入工具";
+  const description = "從 Riot 帳號匯入 VALORANT 造型，加入卡面、吊飾、文字與自訂圖片，自由排版並匯出高畫質 PNG。";
   return {
     metadataBase: base,
     title,
