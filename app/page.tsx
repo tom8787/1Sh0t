@@ -242,13 +242,13 @@ function drawScene(
     [786, 124, 180, 300, "PLAYER CARD"], [992, 124, 164, 142, "BUDDY"], [992, 294, 164, 130, "EMBLEM"],
   ] as const;
   for (const [x, y, w, h, label] of slots) {
-    ctx.fillStyle = "rgba(10,26,38,.48)";
-    roundedRect(ctx, x, y, w, h, 12);
+    ctx.fillStyle = "rgba(248,247,242,.72)";
+    roundedRect(ctx, x, y, w, h, 3);
     ctx.fill();
-    ctx.strokeStyle = "rgba(157,220,228,.22)";
-    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = "rgba(255,255,255,.58)";
+    ctx.lineWidth = 1;
     ctx.stroke();
-    ctx.fillStyle = "rgba(197,233,238,.64)";
+    ctx.fillStyle = "rgba(24,38,45,.58)";
     ctx.font = "700 12px Arial, sans-serif";
     ctx.fillText(label, x + 14, y + 24);
   }
