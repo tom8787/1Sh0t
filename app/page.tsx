@@ -422,6 +422,7 @@ export default function Home() {
   const [accountName, setAccountName] = useState("我的 Riot 帳號");
   const [storeOffers, setStoreOffers] = useState<StoreOffer[]>([]);
   const [storeRemaining, setStoreRemaining] = useState(0);
+  const [storeError, setStoreError] = useState("");
   const [rankSummary, setRankSummary] = useState<RankSummary | null>(null);
   const [recentMatches, setRecentMatches] = useState<MatchSummary[]>([]);
 
@@ -770,8 +771,21 @@ export default function Home() {
 
       setToolsStatus("正在讀取每日商城、段位與近期戰績…");
       const pdHost = `https://pd.${region}.a.pvp.net`;
+      const storefrontPromise = (async () => {
+        try {
+          const currentResponse = await fetch(`${pdHost}/store/v3/storefront/${encodeURIComponent(puuid)}`, {
+            method: "POST",
+            headers: { ...riotHeaders, "Content-Type": "application/json" },
+            body: "{}",
+          });
+          if (currentResponse.ok) return currentResponse;
+        } catch {
+          // Some Riot regions may still require the legacy storefront endpoint.
+        }
+        return fetch(`${pdHost}/store/v2/storefront/${encodeURIComponent(puuid)}`, { headers: riotHeaders });
+      })();
       const [storefrontResponse, mmrResponse, historyResponse] = await Promise.all([
-        fetch(`${pdHost}/store/v2/storefront/${encodeURIComponent(puuid)}`, { headers: riotHeaders }),
+        storefrontPromise,
         fetch(`${pdHost}/mmr/v1/players/${encodeURIComponent(puuid)}`, { headers: riotHeaders }),
         fetch(`${pdHost}/match-history/v1/history/${encodeURIComponent(puuid)}?startIndex=0&endIndex=5`, { headers: riotHeaders }),
       ]);
@@ -794,6 +808,7 @@ export default function Home() {
         optionalJson("https://valorant-api.com/v1/agents?isPlayableCharacter=true&language=zh-TW"),
       ]);
 
+      let storefrontLoaded = false;
       if (storefrontResponse.ok) {
         const storefront = await storefrontResponse.json() as {
           SkinsPanelLayout?: {
@@ -806,6 +821,7 @@ export default function Home() {
         const panel = storefront.SkinsPanelLayout;
         const detailedOffers = [...(panel?.SingleItemStoreOffers || []), ...(storefront.Offers || [])];
         const offerIds = panel?.SingleItemOffers || detailedOffers.map((offer) => offer.OfferID || "").filter(Boolean);
+        storefrontLoaded = offerIds.length > 0;
         setStoreOffers(offerIds.map((offerId) => {
           const id = offerId.toLowerCase();
           const asset = allCatalog.find((entry) => entry.levelIds?.includes(id));
@@ -819,9 +835,11 @@ export default function Home() {
           };
         }));
         setStoreRemaining(Number(panel?.SingleItemOffersRemainingDurationInSeconds || 0));
+        setStoreError(storefrontLoaded ? "" : "商城已連線，但沒有收到今天的造型資料；請稍後重新驗證更新。");
       } else {
         setStoreOffers([]);
         setStoreRemaining(0);
+        setStoreError(`Riot 商城暫時無法讀取（狀態 ${storefrontResponse.status}），請重新登入後再試。`);
       }
 
       if (mmrResponse.ok) {
@@ -898,7 +916,7 @@ export default function Home() {
       }
 
       const missing: string[] = [];
-      if (!storefrontResponse.ok) missing.push("每日商城");
+      if (!storefrontLoaded) missing.push("每日商城");
       if (!mmrResponse.ok) missing.push("段位");
       if (!historyResponse.ok) missing.push("近期戰績");
       setToolsLoaded(true);
@@ -1016,7 +1034,7 @@ export default function Home() {
             <div className="utility-tabs"><button className={toolsTab === "store" ? "active" : ""} onClick={() => setToolsTab("store")}>每日商城</button><button className={toolsTab === "stats" ? "active" : ""} onClick={() => setToolsTab("stats")}>段位與戰績</button></div>
             {toolsTab === "store" ? <section className="utility-view">
               <div className="utility-view-head"><div><span className="eyebrow">DAILY STORE</span><h3>今天的每日商城</h3></div><span className="refresh-time">{storeRemaining ? `距離刷新 ${remainingLabel(storeRemaining)}` : "刷新時間暫無資料"}</span></div>
-              {storeOffers.length ? <div className="store-grid">{storeOffers.map((offer) => <article className="store-card" key={offer.id}><div className="store-art">{offer.imageUrl ? <img src={offer.imageUrl} alt="" crossOrigin="anonymous" /> : <span>NO IMAGE</span>}</div><div><small>{offer.weapon}</small><strong>{offer.name}</strong><b>{offer.price ? `${offer.price.toLocaleString()} VP` : "價格暫無資料"}</b></div></article>)}</div> : <div className="utility-empty"><strong>目前無法顯示每日商城</strong><p>請重新驗證；若仍無法讀取，可能是 Riot 更新了商城資料格式。</p></div>}
+              {storeOffers.length ? <div className="store-grid">{storeOffers.map((offer) => <article className="store-card" key={offer.id}><div className="store-art">{offer.imageUrl ? <img src={offer.imageUrl} alt="" crossOrigin="anonymous" /> : <span>NO IMAGE</span>}</div><div><small>{offer.weapon}</small><strong>{offer.name}</strong><b>{offer.price ? `${offer.price.toLocaleString()} VP` : "價格暫無資料"}</b></div></article>)}</div> : <div className="utility-empty"><strong>目前無法顯示每日商城</strong><p>{storeError || "請重新驗證更新；若仍無法讀取，請稍後再試。"}</p></div>}
             </section> : <section className="utility-view stats-view">
               <div className="rank-card">{rankSummary?.imageUrl ? <img src={rankSummary.imageUrl} alt="" /> : <div className="rank-placeholder">RANK</div>}<div><span>目前競技段位</span><strong>{rankSummary?.tier || "暫無段位資料"}</strong><small>{rankSummary ? `${rankSummary.rr} RR · ${rankSummary.wins} 勝 / ${rankSummary.games} 場` : "請重新驗證更新"}</small></div></div>
               <div className="match-heading"><div><span className="eyebrow">RECENT MATCHES</span><h3>最近五場戰績</h3></div><span>K / D / A</span></div>
