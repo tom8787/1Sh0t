@@ -36,6 +36,9 @@ type SceneItem = LibraryAsset & {
   text?: string;
   textColor?: string;
   fontSize?: number;
+  outlineEnabled?: boolean;
+  outlineColor?: string;
+  outlineWidth?: number;
 };
 
 type ValorantSkin = {
@@ -102,6 +105,47 @@ function drawContainedImage(ctx: CanvasRenderingContext2D, image: HTMLImageEleme
   ctx.drawImage(image, (w - dw) / 2, (h - dh) / 2, dw, dh);
 }
 
+function drawOutlinedImage(
+  ctx: CanvasRenderingContext2D,
+  image: HTMLImageElement,
+  w: number,
+  h: number,
+  color: string,
+  width: number,
+) {
+  const outlineWidth = Math.max(1, width);
+  const pad = Math.ceil(outlineWidth + 3);
+  const mask = document.createElement("canvas");
+  mask.width = Math.ceil(w + pad * 2);
+  mask.height = Math.ceil(h + pad * 2);
+  const maskContext = mask.getContext("2d");
+
+  if (!maskContext) {
+    drawContainedImage(ctx, image, w, h);
+    return;
+  }
+
+  maskContext.save();
+  maskContext.translate(pad, pad);
+  drawContainedImage(maskContext, image, w, h);
+  maskContext.restore();
+  maskContext.globalCompositeOperation = "source-in";
+  maskContext.fillStyle = color;
+  maskContext.fillRect(0, 0, mask.width, mask.height);
+
+  const rings = Math.max(2, Math.ceil(outlineWidth / 3));
+  for (let ring = 1; ring <= rings; ring += 1) {
+    const radius = outlineWidth * ring / rings;
+    const steps = Math.max(24, Math.ceil(radius * 5));
+    for (let step = 0; step < steps; step += 1) {
+      const angle = step * Math.PI * 2 / steps;
+      ctx.drawImage(mask, -pad + Math.cos(angle) * radius, -pad + Math.sin(angle) * radius);
+    }
+  }
+
+  drawContainedImage(ctx, image, w, h);
+}
+
 function drawCoverImage(ctx: CanvasRenderingContext2D, image: HTMLImageElement, w: number, h: number) {
   const scale = Math.max(w / image.naturalWidth, h / image.naturalHeight);
   const sourceW = w / scale;
@@ -126,7 +170,11 @@ function drawItem(ctx: CanvasRenderingContext2D, item: SceneItem, selected: bool
     ctx.fillText(item.text || "自訂文字", 0, item.h / 2, item.w);
     ctx.shadowBlur = 0;
   } else if (image) {
-    drawContainedImage(ctx, image, item.w, item.h);
+    if (item.outlineEnabled) {
+      drawOutlinedImage(ctx, image, item.w, item.h, item.outlineColor || "#f3a3b4", item.outlineWidth || 10);
+    } else {
+      drawContainedImage(ctx, image, item.w, item.h);
+    }
   } else if (item.type === "card" || item.type === "bundle" || item.type === "image") {
     const gradient = ctx.createLinearGradient(0, 0, item.w, item.h);
     gradient.addColorStop(0, item.colors[0]);
@@ -423,6 +471,7 @@ export default function Home() {
   }, [catalog, category, search]);
 
   const current = items.find((item) => item.uid === selected);
+  const canOutline = Boolean(current?.imageUrl && ["rifle", "sniper", "sidearm", "melee"].includes(current.type));
 
   useEffect(() => {
     const ctx = canvasRef.current?.getContext("2d");
@@ -708,6 +757,14 @@ export default function Home() {
             {current ? <>
               <div className="selected-name"><span style={{ background: current.colors[1] }} /><div><strong>{current.name}</strong><small>{current.label}</small></div></div>
               {current.type === "text" && <><label className="field-label">文字內容<input value={current.text || ""} onChange={(event) => updateCurrent({ text: event.target.value, name: event.target.value })} /></label><label className="color-row">文字顏色<input type="color" value={current.textColor || "#ffffff"} onChange={(event) => updateCurrent({ textColor: event.target.value })} /></label><label className="range-label"><span>字體大小 <b>{current.fontSize || 42}px</b></span><input type="range" min="18" max="120" value={current.fontSize || 42} onChange={(event) => updateCurrent({ fontSize: Number(event.target.value) })} /></label></>}
+              {canOutline && <div className={`outline-editor ${current.outlineEnabled ? "active" : ""}`}>
+                <div className="outline-heading"><div><strong>物件外框</strong><small>沿著武器輪廓加上實色邊框</small></div><label className="outline-switch"><input type="checkbox" checked={Boolean(current.outlineEnabled)} onChange={(event) => updateCurrent({ outlineEnabled: event.target.checked, outlineColor: current.outlineColor || "#f3a3b4", outlineWidth: current.outlineWidth || 10 })} /><span>{current.outlineEnabled ? "已開啟" : "開啟"}</span></label></div>
+                {current.outlineEnabled && <>
+                  <div className="outline-color-row"><label>外框顏色<input aria-label="選擇外框顏色" type="color" value={current.outlineColor || "#f3a3b4"} onChange={(event) => updateCurrent({ outlineColor: event.target.value })} /></label><code>{(current.outlineColor || "#f3a3b4").toUpperCase()}</code></div>
+                  <div className="color-presets" aria-label="常用外框顏色">{["#f3a3b4", "#ffffff", "#ff4655", "#f4d35e", "#58e5d5", "#111111"].map((color) => <button key={color} type="button" className={(current.outlineColor || "#f3a3b4").toLowerCase() === color ? "selected" : ""} style={{ backgroundColor: color }} aria-label={`外框顏色 ${color}`} onClick={() => updateCurrent({ outlineColor: color })} />)}</div>
+                  <label className="range-label outline-range"><span>外框粗度 <b>{current.outlineWidth || 10}px</b></span><input aria-label="外框粗度" type="range" min="1" max="30" value={current.outlineWidth || 10} onChange={(event) => updateCurrent({ outlineWidth: Number(event.target.value) })} /></label>
+                </>}
+              </div>}
               <label className="range-label"><span>旋轉角度 <b>{Math.round(current.rotation)}°</b></span><input type="range" min="-180" max="180" value={current.rotation} onChange={(event) => updateCurrent({ rotation: Number(event.target.value) })} /></label>
               <label className="range-label"><span>寬度 <b>{Math.round(current.w)} px</b></span><input type="range" min="54" max="600" value={current.w} onChange={(event) => { const w = Number(event.target.value); updateCurrent({ w, h: current.h * w / current.w }); }} /></label>
               <div className="object-actions"><button onClick={() => updateCurrent({ rotation: 0 })}>角度歸零</button><button onClick={() => setItems((previous) => [...previous.filter((item) => item.uid !== current.uid), current])}>移到最上層</button></div>

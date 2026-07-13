@@ -118,6 +118,24 @@ h3 { font-size: 12px; color: #91a7ae; letter-spacing: .08em; }
 .field-label { display: block; margin-bottom: 12px; }
 .color-row { display: flex; justify-content: space-between; align-items: center; color: #657b83; font-size: 9px; margin: 12px 0; }
 .color-row input { width: 40px; height: 26px; border: 0; background: none; }
+.outline-editor { margin: 14px 0 18px; padding: 13px; border: 1px solid #263b44; background: rgba(6,16,22,.72); transition: border-color .2s, background .2s; }
+.outline-editor.active { border-color: #4f827c; background: rgba(22,54,55,.36); }
+.outline-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.outline-heading strong, .outline-heading small { display: block; }
+.outline-heading strong { color: #d7e8e9; font-size: 11px; }
+.outline-heading small { margin-top: 4px; color: #647b83; font-size: 9px; line-height: 1.35; }
+.outline-switch { min-height: 34px; display: flex; align-items: center; gap: 7px; padding: 7px 9px; border: 1px solid #34515a; color: #8aa0a7; background: #08151a; font-size: 9px; font-weight: 800; cursor: pointer; white-space: nowrap; }
+.outline-switch:has(input:checked) { border-color: #55cdbc; color: #9df5e8; background: rgba(93,228,209,.1); }
+.outline-switch input { accent-color: var(--accent); }
+.outline-color-row { display: flex; align-items: end; justify-content: space-between; gap: 12px; margin-top: 14px; }
+.outline-color-row label { color: #718990; font-size: 9px; }
+.outline-color-row input { display: block; width: 46px; height: 32px; margin-top: 6px; padding: 0; border: 1px solid #39515a; background: transparent; cursor: pointer; }
+.outline-color-row code { color: #91a9af; font: 9px monospace; padding-bottom: 7px; }
+.color-presets { display: grid; grid-template-columns: repeat(6,1fr); gap: 6px; margin-top: 10px; }
+.color-presets button { min-width: 0; height: 28px; border: 2px solid transparent; cursor: pointer; box-shadow: inset 0 0 0 1px rgba(255,255,255,.18); }
+.color-presets button:hover { transform: translateY(-1px); }
+.color-presets button.selected { border-color: var(--accent); box-shadow: 0 0 0 1px #061014, inset 0 0 0 1px rgba(255,255,255,.3); }
+.outline-range { margin-bottom: 0; }
 .range-label { display: block; margin: 16px 0; }
 .range-label > span { display: flex; justify-content: space-between; color: #657b83; font-size: 9px; }
 .range-label b { color: #91a9af; font-family: monospace; }

@@ -1,42 +1,56 @@
-# Design QA — translucent canvas panels
+# Design QA — Custom weapon outline
 
-- Source visual truth: `C:\Users\user\Pictures\valorant_card (15).png`
-- Previous implementation reference: `C:\Users\user\AppData\Local\Temp\codex-clipboard-d9fd6b4a-1c09-442b-9b41-43cf6a955cf7.png`
-- Implementation screenshot: `C:\Users\user\Documents\Codex\2026-07-13\sites-plugin-sites-openai-bundled\work\translucent-slots-implementation.png`
-- Combined comparison: `C:\Users\user\Documents\Codex\2026-07-13\sites-plugin-sites-openai-bundled\work\qa-comparison.png`
-- Viewport: 1265 × 712 desktop
-- State: editor loaded with one weapon and one text object; default canvas background
+- Source visual truth: `C:\Users\user\AppData\Local\Temp\codex-clipboard-e33fdccf-ecc4-4274-ab89-8d880de5bab5.png`
+- Browser-rendered implementation: `C:\Users\user\Documents\Codex\2026-07-13\sites-plugin-sites-openai-bundled\work\outline-implementation.png`
+- Clean implementation state: `C:\Users\user\Documents\Codex\2026-07-13\sites-plugin-sites-openai-bundled\work\outline-clean.png`
+- Combined focused comparison: `C:\Users\user\Documents\Codex\2026-07-13\sites-plugin-sites-openai-bundled\work\outline-qa-comparison.png`
+- Viewport: 1267 × 712 desktop
+- State: one catalog weapon selected, outline enabled, pink preset selected, 10 px thickness
 
-## Full-view comparison evidence
+**Findings**
 
-The target uses pale rectangular panels that allow the colorful background to remain visible. The revised implementation now uses a pale warm-white fill at 72% opacity, a near-square 3 px corner radius, a fine translucent white edge, and dark slot labels. The background remains visibly present through every panel. The requested panel treatment is clearly readable in the full comparison, so a separate focused crop was not necessary.
+- No actionable P0/P1/P2 mismatch. The implementation reproduces the requested visual behavior: a solid, rounded pink silhouette border follows the transparent weapon pixels and remains behind the original artwork.
+- The weapon artwork differs from the reference because the test uses a different catalog skin; this is expected and does not affect outline fidelity.
 
-## Required fidelity surfaces
+**Required Fidelity Surfaces**
 
-- Fonts and typography: existing product typography is intentionally preserved; slot labels changed to a dark translucent tone for contrast on the new light panels.
-- Spacing and layout rhythm: existing slot positions and dimensions are preserved; the target request concerned panel treatment rather than rearranging the editor template.
-- Colors and visual tokens: dark blue translucent fills were replaced with warm-white translucent fills matching the reference's dominant panel treatment.
-- Image quality and asset fidelity: real VALORANT catalog imagery remains sharp and is not replaced or altered.
-- Copy and content: existing editor labels and controls remain unchanged.
+- Fonts and typography: Existing editor typography is preserved. The new control follows the inspector's label, value, and helper-text hierarchy with no wrapping or truncation.
+- Spacing and layout rhythm: The outline control is grouped above transform controls with consistent 13–18 px internal rhythm and does not overflow the 310 px inspector.
+- Colors and visual tokens: The default `#F3A3B4` closely matches the reference pink. Teal is retained for active/focus states so outline color and editor state are not confused.
+- Image quality and asset fidelity: The border is generated from the real transparent weapon bitmap, not a rectangular frame. The contour is solid and rounded with no visible masking halo in the focused comparison.
+- Copy and content: Controls clearly expose `物件外框`, `外框顏色`, and `外框粗度`, including the current color and pixel value.
 
-## Comparison history
+**Interaction and Runtime Checks**
 
-1. Earlier finding — P1: the previous implementation used dark navy translucent slots with rounded borders, which materially differed from the user's pale translucent reference panels.
-2. Fix: changed slot fill to `rgba(248,247,242,.72)`, reduced corner radius from 12 px to 3 px, changed the border to a fine translucent white, and changed labels to a dark translucent color.
-3. Post-fix evidence: `work\qa-comparison.png` shows the target and revised implementation together; panel lightness, transparency, edge treatment, and background visibility now match the requested direction.
+- Tested: open catalog, add a weapon, select the weapon, enable/disable outline, switch color presets, adjust the thickness slider, deselect on canvas, and render the clean result.
+- Export path uses the same scene renderer, so the outline is included in exported PNG files while the editor-only selection box is omitted.
+- Browser console checked after interaction: no errors or warnings; only Vite connection and React development informational logs.
+- Persistence: outline enabled state, color, and width are stored with the existing scene item in local storage.
 
-## Findings
+**Full-view Comparison Evidence**
 
-- No actionable P0, P1, or P2 mismatches remain for the requested panel-style change.
-- P3: the reference uses a custom colorful background while the implementation capture uses the product's default blue background. This is expected because users can upload their own background in the editor.
+- `outline-implementation.png` shows the complete editor with the selected weapon and all outline controls visible.
 
-## Primary interactions tested
+**Focused Region Comparison Evidence**
 
-- Editor loaded successfully.
-- Canvas was visible and rendered the revised panel treatment.
-- VALORANT catalog loaded 3,505 items.
-- No visible runtime error state was present.
+- `outline-qa-comparison.png` places the reference and clean browser render together. Both show a thick pastel-pink contour following the weapon silhouette, including internal protrusions and the grip area.
 
-## Final result
+**Comparison History**
+
+- Initial pass: no actionable P0/P1/P2 findings; no visual fixes were required after the combined comparison.
+
+**Follow-up Polish**
+
+- P3: A future performance pass could cache generated masks for scenes containing many outlined weapons; the current implementation remains responsive for normal compositions.
+
+**Implementation Checklist**
+
+- [x] Weapon and knife eligibility
+- [x] Enable/disable outline
+- [x] Custom color picker and presets
+- [x] Adjustable 1–30 px thickness
+- [x] Local persistence
+- [x] PNG export support
+- [x] Browser interaction and console verification
 
 final result: passed
