@@ -56,6 +56,38 @@ type ValorantWeapon = {
   skins: ValorantSkin[];
 };
 
+type UtilityTab = "store" | "stats";
+
+type StoreOffer = {
+  id: string;
+  name: string;
+  weapon: string;
+  imageUrl?: string;
+  price: number;
+};
+
+type RankSummary = {
+  tier: string;
+  tierNumber: number;
+  rr: number;
+  wins: number;
+  games: number;
+  imageUrl?: string;
+};
+
+type MatchSummary = {
+  id: string;
+  result: "勝利" | "敗北" | "平手";
+  score: string;
+  mode: string;
+  agent: string;
+  agentImageUrl?: string;
+  kills: number;
+  deaths: number;
+  assists: number;
+  playedAt: number;
+};
+
 const W = 1200;
 const H = 760;
 const DEFAULT_THEME_UUID = "5a629df4-4765-0214-bd40-fbb96542941f";
@@ -321,6 +353,27 @@ function jwtSubject(token: string) {
   }
 }
 
+function queueLabel(queueId: string) {
+  const labels: Record<string, string> = {
+    competitive: "競技模式",
+    unrated: "一般模式",
+    swiftplay: "超速衝點",
+    spikerush: "超激進戰",
+    deathmatch: "死鬥模式",
+    teamdeathmatch: "團隊死鬥",
+    escalation: "戰慄模式",
+    replication: "複製亂戰",
+  };
+  return labels[queueId] || queueId || "其他模式";
+}
+
+function remainingLabel(seconds: number) {
+  const safe = Math.max(0, Math.floor(seconds));
+  const hours = Math.floor(safe / 3600);
+  const minutes = Math.floor((safe % 3600) / 60);
+  return `${hours} 小時 ${minutes} 分`;
+}
+
 function savedScene(): SceneItem[] {
   if (typeof window === "undefined") return [];
   try {
@@ -361,6 +414,16 @@ export default function Home() {
   const [region, setRegion] = useState("ap");
   const [importing, setImporting] = useState(false);
   const [importStatus, setImportStatus] = useState("");
+  const [toolsOpen, setToolsOpen] = useState(false);
+  const [toolsTab, setToolsTab] = useState<UtilityTab>("store");
+  const [toolsLoading, setToolsLoading] = useState(false);
+  const [toolsLoaded, setToolsLoaded] = useState(false);
+  const [toolsStatus, setToolsStatus] = useState("");
+  const [accountName, setAccountName] = useState("我的 Riot 帳號");
+  const [storeOffers, setStoreOffers] = useState<StoreOffer[]>([]);
+  const [storeRemaining, setStoreRemaining] = useState(0);
+  const [rankSummary, setRankSummary] = useState<RankSummary | null>(null);
+  const [recentMatches, setRecentMatches] = useState<MatchSummary[]>([]);
 
   const flash = useCallback((message: string) => {
     setToast(message);
@@ -679,6 +742,175 @@ export default function Home() {
     }
   };
 
+  const loadUtilityData = async () => {
+    if (!authUrl.trim()) return setToolsStatus("請先貼上 Riot 登入完成後的完整網址。");
+    setToolsLoading(true);
+    setToolsStatus("正在驗證 Riot 帳號…");
+    try {
+      const { accessToken, idToken } = parseAccessToken(authUrl);
+      const puuid = jwtSubject(accessToken) || (idToken ? jwtSubject(idToken) : "");
+      if (!puuid) throw new Error("無法讀取帳號識別碼，請重新取得驗證網址。");
+
+      const entitlementsResponse = await fetch("https://entitlements.auth.riotgames.com/api/token/v1", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+        body: "{}",
+      });
+      if (!entitlementsResponse.ok) throw new Error("驗證已過期或無效，請重新登入 Riot。");
+      const entitlements = await entitlementsResponse.json();
+      const versionResponse = await fetch("https://valorant-api.com/v1/version");
+      if (!versionResponse.ok) throw new Error("暫時無法確認遊戲版本，請稍後再試。");
+      const versionJson = await versionResponse.json();
+      const riotHeaders: Record<string, string> = {
+        Authorization: `Bearer ${accessToken}`,
+        "X-Riot-Entitlements-JWT": entitlements.entitlements_token,
+        "X-Riot-ClientVersion": versionJson.data.riotClientVersion,
+        "X-Riot-ClientPlatform": CLIENT_PLATFORM,
+      };
+
+      setToolsStatus("正在讀取每日商城、段位與近期戰績…");
+      const pdHost = `https://pd.${region}.a.pvp.net`;
+      const [storefrontResponse, mmrResponse, historyResponse] = await Promise.all([
+        fetch(`${pdHost}/store/v2/storefront/${encodeURIComponent(puuid)}`, { headers: riotHeaders }),
+        fetch(`${pdHost}/mmr/v1/players/${encodeURIComponent(puuid)}`, { headers: riotHeaders }),
+        fetch(`${pdHost}/match-history/v1/history/${encodeURIComponent(puuid)}?startIndex=0&endIndex=5`, { headers: riotHeaders }),
+      ]);
+      if ([storefrontResponse, mmrResponse, historyResponse].every((response) => !response.ok)) {
+        throw new Error("無法讀取帳號資料。請確認帳號分區是否正確，再重新嘗試。");
+      }
+
+      const optionalJson = async (url: string) => {
+        try {
+          const response = await fetch(url);
+          return response.ok ? response.json() : { data: [] };
+        } catch {
+          return { data: [] };
+        }
+      };
+      const [allCatalog, seasonsJson, tiersJson, agentsJson] = await Promise.all([
+        loadCatalog().catch(() => [] as LibraryAsset[]),
+        optionalJson("https://valorant-api.com/v1/seasons?language=zh-TW"),
+        optionalJson("https://valorant-api.com/v1/competitivetiers?language=zh-TW"),
+        optionalJson("https://valorant-api.com/v1/agents?isPlayableCharacter=true&language=zh-TW"),
+      ]);
+
+      if (storefrontResponse.ok) {
+        const storefront = await storefrontResponse.json() as {
+          SkinsPanelLayout?: {
+            SingleItemOffers?: string[];
+            SingleItemStoreOffers?: { OfferID?: string; Cost?: Record<string, number> }[];
+            SingleItemOffersRemainingDurationInSeconds?: number;
+          };
+          Offers?: { OfferID?: string; Cost?: Record<string, number> }[];
+        };
+        const panel = storefront.SkinsPanelLayout;
+        const detailedOffers = [...(panel?.SingleItemStoreOffers || []), ...(storefront.Offers || [])];
+        const offerIds = panel?.SingleItemOffers || detailedOffers.map((offer) => offer.OfferID || "").filter(Boolean);
+        setStoreOffers(offerIds.map((offerId) => {
+          const id = offerId.toLowerCase();
+          const asset = allCatalog.find((entry) => entry.levelIds?.includes(id));
+          const details = detailedOffers.find((offer) => offer.OfferID?.toLowerCase() === id);
+          return {
+            id,
+            name: asset?.name || "未知造型",
+            weapon: asset?.label || "武器造型",
+            imageUrl: asset?.imageUrl,
+            price: Number(Object.values(details?.Cost || {})[0] || 0),
+          };
+        }));
+        setStoreRemaining(Number(panel?.SingleItemOffersRemainingDurationInSeconds || 0));
+      } else {
+        setStoreOffers([]);
+        setStoreRemaining(0);
+      }
+
+      if (mmrResponse.ok) {
+        const mmr = await mmrResponse.json() as {
+          QueueSkills?: { competitive?: { SeasonalInfoBySeasonID?: Record<string, {
+            CompetitiveTier?: number;
+            Rank?: number;
+            RankedRating?: number;
+            NumberOfWins?: number;
+            NumberOfGames?: number;
+          }> } };
+        };
+        const seasonal = mmr.QueueSkills?.competitive?.SeasonalInfoBySeasonID || {};
+        const acts = ((seasonsJson.data || []) as { uuid: string; type?: string; startTime?: string }[])
+          .filter((season) => season.type?.includes("Act"))
+          .sort((a, b) => Date.parse(b.startTime || "") - Date.parse(a.startTime || ""));
+        const seasonalValues = Object.values(seasonal);
+        const currentSeason = acts.map((act) => seasonal[act.uuid]).find(Boolean) || seasonalValues[seasonalValues.length - 1];
+        const tierNumber = Number(currentSeason?.CompetitiveTier ?? currentSeason?.Rank ?? 0);
+        const tierSets = (tiersJson.data || []) as { tiers?: { tier: number; tierName: string; largeIcon?: string }[] }[];
+        const tierMeta = [...tierSets].reverse().flatMap((set) => set.tiers || []).find((tier) => tier.tier === tierNumber);
+        setRankSummary({
+          tier: tierMeta?.tierName || (tierNumber ? `階級 ${tierNumber}` : "尚未定級"),
+          tierNumber,
+          rr: Number(currentSeason?.RankedRating || 0),
+          wins: Number(currentSeason?.NumberOfWins || 0),
+          games: Number(currentSeason?.NumberOfGames || 0),
+          imageUrl: tierMeta?.largeIcon,
+        });
+      } else {
+        setRankSummary(null);
+      }
+
+      if (historyResponse.ok) {
+        const historyJson = await historyResponse.json() as { History?: { MatchID: string; GameStartTime?: number; QueueID?: string }[] };
+        const history = (historyJson.History || []).slice(0, 5);
+        const details = await Promise.all(history.map(async (entry) => {
+          const response = await fetch(`${pdHost}/match-details/v1/matches/${encodeURIComponent(entry.MatchID)}`, { headers: riotHeaders });
+          return response.ok ? response.json() : null;
+        }));
+        const agentMap = new Map<string, { displayName: string; displayIcon?: string }>(
+          ((agentsJson.data || []) as { uuid: string; displayName: string; displayIcon?: string }[])
+            .map((agent) => [agent.uuid.toLowerCase(), { displayName: agent.displayName, displayIcon: agent.displayIcon }]),
+        );
+        const matches = details.flatMap((detail, index): MatchSummary[] => {
+          if (!detail) return [];
+          const players = (detail.players || []) as { subject: string; gameName?: string; tagLine?: string; teamId?: string; characterId?: string; stats?: { kills?: number; deaths?: number; assists?: number } }[];
+          const player = players.find((entry) => entry.subject === puuid);
+          if (!player) return [];
+          const teams = (detail.teams || []) as { teamId?: string; won?: boolean; roundsWon?: number }[];
+          const team = teams.find((entry) => entry.teamId === player.teamId);
+          const opponent = teams.find((entry) => entry.teamId !== player.teamId);
+          const teamRounds = Number(team?.roundsWon || 0);
+          const opponentRounds = Number(opponent?.roundsWon || 0);
+          const result: MatchSummary["result"] = team?.won ? "勝利" : teamRounds === opponentRounds ? "平手" : "敗北";
+          const agent = agentMap.get((player.characterId || "").toLowerCase());
+          if (player.gameName) setAccountName(`${player.gameName}${player.tagLine ? `#${player.tagLine}` : ""}`);
+          return [{
+            id: history[index].MatchID,
+            result,
+            score: `${teamRounds} : ${opponentRounds}`,
+            mode: queueLabel(history[index].QueueID || detail.matchInfo?.queueID || ""),
+            agent: agent?.displayName || "未知特務",
+            agentImageUrl: agent?.displayIcon,
+            kills: Number(player.stats?.kills || 0),
+            deaths: Number(player.stats?.deaths || 0),
+            assists: Number(player.stats?.assists || 0),
+            playedAt: Number(history[index].GameStartTime || detail.matchInfo?.gameStartMillis || Date.now()),
+          }];
+        });
+        setRecentMatches(matches);
+      } else {
+        setRecentMatches([]);
+      }
+
+      const missing: string[] = [];
+      if (!storefrontResponse.ok) missing.push("每日商城");
+      if (!mmrResponse.ok) missing.push("段位");
+      if (!historyResponse.ok) missing.push("近期戰績");
+      setToolsLoaded(true);
+      setAuthUrl("");
+      setToolsStatus(missing.length ? `已完成，但目前無法讀取：${missing.join("、")}。` : "完成：帳號資料已更新。");
+    } catch (error) {
+      setToolsStatus(error instanceof Error ? error.message : "讀取失敗，請重新嘗試。");
+    } finally {
+      setToolsLoading(false);
+    }
+  };
+
   const assetList = (limit: number) => (
     <>
       {catalogLoading && <div className="catalog-message"><span className="spinner" />正在同步 VALORANT 造型資料…</div>}
@@ -700,6 +932,7 @@ export default function Home() {
         <div className="top-actions">
           <span className="status-dot" /><span className="privacy-label">本機處理 · 不儲存 Riot 憑證</span>
           <button className="ghost-btn" onClick={openLibrary}>＋ 素材庫</button>
+          <button className="tools-btn" onClick={() => { setToolsOpen(true); setToolsStatus(""); }}>實用小工具</button>
           <button className="import-btn" onClick={openImport}>⇄ Riot 匯入</button>
           <button className="export-btn" onClick={exportPng}>匯出 PNG</button>
         </div>
@@ -762,6 +995,34 @@ export default function Home() {
           <div className="catalog-toolbar"><label className="search"><span>⌕</span><input placeholder="搜尋造型名稱或武器" value={search} onChange={(event) => setSearch(event.target.value)} /></label><div className="tabs">{categoryTabs.map((tab) => <button key={tab.key} className={category === tab.key ? "active" : ""} onClick={() => setCategory(tab.key)}>{tab.label}</button>)}</div><span className="result-count">{filtered.length} 項</span></div>
           <div className="modal-grid">{assetList(visibleCount)}</div>
           {visibleCount < filtered.length && <button className="load-more" onClick={() => setVisibleCount((value) => value + 80)}>顯示更多</button>}
+        </section>
+      </div>}
+
+      {toolsOpen && <div className="modal-backdrop" onMouseDown={() => { if (!toolsLoading) { setToolsOpen(false); setAuthUrl(""); } }}>
+        <section className="modal tools-modal" role="dialog" aria-modal="true" aria-label="實用小工具" onMouseDown={(event) => event.stopPropagation()}>
+          <div className="modal-head"><div><span className="eyebrow">ACCOUNT UTILITIES</span><h2>實用小工具</h2></div><button className="close-btn" disabled={toolsLoading} onClick={() => { setToolsOpen(false); setAuthUrl(""); }}>×</button></div>
+          {!toolsLoaded ? <>
+            <div className="experimental"><strong>帳號本人檢視</strong><p>驗證與資料讀取都在你的瀏覽器中完成，不會上傳或儲存登入網址。每日商城使用實驗性遊戲資料來源，Riot 更新後可能暫時失效。</p></div>
+            <div className="utility-preview"><div><span>01</span><strong>每日商城</strong><small>查看本日四個武器造型與售價</small></div><div><span>02</span><strong>段位與戰績</strong><small>查看目前階級、RR 與最近五場</small></div></div>
+            <ol className="auth-steps"><li><a href={RIOT_LOGIN_URL} target="_blank" rel="noopener noreferrer">開啟 Riot 官方登入頁 ↗</a>，完成登入。</li><li>登入後複製瀏覽器網址列中的<strong>完整網址</strong>。</li><li>貼到下方，選擇帳號分區後讀取資料。</li></ol>
+            <label className="auth-field">驗證網址<textarea value={authUrl} onChange={(event) => setAuthUrl(event.target.value)} placeholder="https://playvalorant.com/opt_in#access_token=…" autoComplete="off" spellCheck={false} /></label>
+            <div className="import-options utility-region"><label>帳號分區<select value={region} onChange={(event) => setRegion(event.target.value)}><option value="ap">亞太 AP（台灣）</option><option value="na">北美 NA</option><option value="eu">歐洲 EU</option><option value="kr">韓國 KR</option><option value="br">巴西 BR</option><option value="latam">拉丁美洲 LATAM</option></select></label></div>
+            {toolsStatus && <div className="import-status">{toolsStatus}</div>}
+            <button className="primary-wide" disabled={toolsLoading || !authUrl.trim()} onClick={() => void loadUtilityData()}>{toolsLoading ? <><span className="spinner" />正在同步帳號資料…</> : "讀取實用小工具"}</button>
+            <p className="token-note">安全提醒：驗證網址等同短效登入憑證，請勿貼給任何人；關閉視窗時會立即清除。</p>
+          </> : <>
+            <div className="utility-account"><div><span>已連結帳號</span><strong>{accountName}</strong></div><button onClick={() => { setToolsLoaded(false); setToolsStatus(""); }}>重新驗證更新</button></div>
+            {toolsStatus && <div className={`import-status ${toolsStatus.startsWith("完成") ? "success" : ""}`}>{toolsStatus}</div>}
+            <div className="utility-tabs"><button className={toolsTab === "store" ? "active" : ""} onClick={() => setToolsTab("store")}>每日商城</button><button className={toolsTab === "stats" ? "active" : ""} onClick={() => setToolsTab("stats")}>段位與戰績</button></div>
+            {toolsTab === "store" ? <section className="utility-view">
+              <div className="utility-view-head"><div><span className="eyebrow">DAILY STORE</span><h3>今天的每日商城</h3></div><span className="refresh-time">{storeRemaining ? `距離刷新 ${remainingLabel(storeRemaining)}` : "刷新時間暫無資料"}</span></div>
+              {storeOffers.length ? <div className="store-grid">{storeOffers.map((offer) => <article className="store-card" key={offer.id}><div className="store-art">{offer.imageUrl ? <img src={offer.imageUrl} alt="" crossOrigin="anonymous" /> : <span>NO IMAGE</span>}</div><div><small>{offer.weapon}</small><strong>{offer.name}</strong><b>{offer.price ? `${offer.price.toLocaleString()} VP` : "價格暫無資料"}</b></div></article>)}</div> : <div className="utility-empty"><strong>目前無法顯示每日商城</strong><p>請重新驗證；若仍無法讀取，可能是 Riot 更新了商城資料格式。</p></div>}
+            </section> : <section className="utility-view stats-view">
+              <div className="rank-card">{rankSummary?.imageUrl ? <img src={rankSummary.imageUrl} alt="" /> : <div className="rank-placeholder">RANK</div>}<div><span>目前競技段位</span><strong>{rankSummary?.tier || "暫無段位資料"}</strong><small>{rankSummary ? `${rankSummary.rr} RR · ${rankSummary.wins} 勝 / ${rankSummary.games} 場` : "請重新驗證更新"}</small></div></div>
+              <div className="match-heading"><div><span className="eyebrow">RECENT MATCHES</span><h3>最近五場戰績</h3></div><span>K / D / A</span></div>
+              {recentMatches.length ? <div className="match-list">{recentMatches.map((match) => <article className={`match-row ${match.result === "勝利" ? "win" : match.result === "敗北" ? "loss" : "draw"}`} key={match.id}><div className="match-agent">{match.agentImageUrl ? <img src={match.agentImageUrl} alt="" /> : <span />}</div><div className="match-main"><strong>{match.result} <b>{match.score}</b></strong><small>{match.mode} · {match.agent}</small></div><div className="match-kda"><strong>{match.kills} / {match.deaths} / {match.assists}</strong><small>{new Date(match.playedAt).toLocaleDateString("zh-TW")}</small></div></article>)}</div> : <div className="utility-empty"><strong>目前沒有近期戰績</strong><p>請確認分區，或稍後重新驗證更新。</p></div>}
+            </section>}
+          </>}
         </section>
       </div>}
 
