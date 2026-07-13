@@ -1,56 +1,51 @@
-# Design QA — Custom weapon outline
+# Design QA — Clean canvas overlays
 
-- Source visual truth: `C:\Users\user\AppData\Local\Temp\codex-clipboard-e33fdccf-ecc4-4274-ab89-8d880de5bab5.png`
-- Browser-rendered implementation: `C:\Users\user\Documents\Codex\2026-07-13\sites-plugin-sites-openai-bundled\work\outline-implementation.png`
-- Clean implementation state: `C:\Users\user\Documents\Codex\2026-07-13\sites-plugin-sites-openai-bundled\work\outline-clean.png`
-- Combined focused comparison: `C:\Users\user\Documents\Codex\2026-07-13\sites-plugin-sites-openai-bundled\work\outline-qa-comparison.png`
+- Source visual truth 1: `C:\Users\user\AppData\Local\Temp\codex-clipboard-59b1be9b-a721-44b9-80b5-2e717f8858ca.png`
+- Source visual truth 2: `C:\Users\user\AppData\Local\Temp\codex-clipboard-2f9ce04a-56b5-4a60-9dc3-89b86a836621.png`
+- Browser-rendered implementation: `C:\Users\user\Documents\Codex\2026-07-13\sites-plugin-sites-openai-bundled\work\clean-canvas-implementation.png`
+- Combined comparison evidence: `C:\Users\user\Documents\Codex\2026-07-13\sites-plugin-sites-openai-bundled\work\clean-canvas-qa-comparison.png`
 - Viewport: 1267 × 712 desktop
-- State: one catalog weapon selected, outline enabled, pink preset selected, 10 px thickness
+- State: editor loaded with one previously saved outlined weapon and the default canvas background
 
 **Findings**
 
-- No actionable P0/P1/P2 mismatch. The implementation reproduces the requested visual behavior: a solid, rounded pink silhouette border follows the transparent weapon pixels and remains behind the original artwork.
-- The weapon artwork differs from the reference because the test uses a different catalog skin; this is expected and does not affect outline fidelity.
+- No actionable P0/P1/P2 mismatch. The requested title and subtitle are absent from the upper-left canvas region.
+- No actionable P0/P1/P2 mismatch. The full-width bottom black bar and both of its text labels are absent; the canvas background now continues to the lower edge.
 
 **Required Fidelity Surfaces**
 
-- Fonts and typography: Existing editor typography is preserved. The new control follows the inspector's label, value, and helper-text hierarchy with no wrapping or truncation.
-- Spacing and layout rhythm: The outline control is grouped above transform controls with consistent 13–18 px internal rhythm and does not overflow the 310 px inspector.
-- Colors and visual tokens: The default `#F3A3B4` closely matches the reference pink. Teal is retained for active/focus states so outline color and editor state are not confused.
-- Image quality and asset fidelity: The border is generated from the real transparent weapon bitmap, not a rectangular frame. The contour is solid and rounded with no visible masking halo in the focused comparison.
-- Copy and content: Controls clearly expose `物件外框`, `外框顏色`, and `外框粗度`, including the current color and pixel value.
-
-**Interaction and Runtime Checks**
-
-- Tested: open catalog, add a weapon, select the weapon, enable/disable outline, switch color presets, adjust the thickness slider, deselect on canvas, and render the clean result.
-- Export path uses the same scene renderer, so the outline is included in exported PNG files while the editor-only selection box is omitted.
-- Browser console checked after interaction: no errors or warnings; only Vite connection and React development informational logs.
-- Persistence: outline enabled state, color, and width are stored with the existing scene item in local storage.
+- Fonts and typography: The specified `LOADOUT // 特戰收藏`, `PERSONAL ARMORY • LOADOUT LAB`, `SW// LAB`, and `DRAG • SCALE • CREATE` text is no longer rendered. Remaining editor typography is unchanged.
+- Spacing and layout rhythm: Removing the footer restores 58 px of uninterrupted canvas area without shifting objects or changing the 1200 × 760 export size.
+- Colors and visual tokens: The opaque/translucent black footer treatment is removed. The default background grid continues cleanly to the bottom edge.
+- Image quality and asset fidelity: Weapon and uploaded background rendering are unchanged; no image is cropped or rescaled by this change.
+- Copy and content: Only the four user-identified canvas labels were removed. VP/RP remains available in the top-right as an existing account display.
 
 **Full-view Comparison Evidence**
 
-- `outline-implementation.png` shows the complete editor with the selected weapon and all outline controls visible.
+- `clean-canvas-implementation.png` shows the complete editor and confirms the canvas remains functional after removing the overlays.
 
 **Focused Region Comparison Evidence**
 
-- `outline-qa-comparison.png` places the reference and clean browser render together. Both show a thick pastel-pink contour following the weapon silhouette, including internal protrusions and the grip area.
+- `clean-canvas-qa-comparison.png` places each unwanted source region beside the corresponding updated region. The upper-left is free of the two title lines, and the lower edge has no footer bar or footer copy.
 
 **Comparison History**
 
-- Initial pass: no actionable P0/P1/P2 findings; no visual fixes were required after the combined comparison.
+- Initial pass: no actionable P0/P1/P2 findings after the requested removal; no follow-up visual fix was required.
 
-**Follow-up Polish**
+**Primary Interactions and Runtime Checks**
 
-- P3: A future performance pass could cache generated masks for scenes containing many outlined weapons; the current implementation remains responsive for normal compositions.
+- Existing saved weapon rendered correctly.
+- Canvas selection/editor state remained usable.
+- Browser console checked: no errors or warnings; only Vite connection and React development informational logs.
+- PNG export uses the same updated scene renderer, so removed overlays are also absent from exported images.
 
 **Implementation Checklist**
 
-- [x] Weapon and knife eligibility
-- [x] Enable/disable outline
-- [x] Custom color picker and presets
-- [x] Adjustable 1–30 px thickness
-- [x] Local persistence
-- [x] PNG export support
-- [x] Browser interaction and console verification
+- [x] Remove top-left title
+- [x] Remove top-left subtitle
+- [x] Remove bottom black footer bar
+- [x] Remove both footer labels
+- [x] Preserve canvas dimensions and existing editor behavior
+- [x] Verify in browser and inspect console
 
 final result: passed

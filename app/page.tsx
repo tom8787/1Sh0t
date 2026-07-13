@@ -285,12 +285,6 @@ function drawScene(
     ctx.shadowColor = "rgba(0,0,0,.82)";
     ctx.shadowBlur = 10;
   }
-  ctx.fillStyle = "#f4f8fb";
-  ctx.font = "800 30px Arial, sans-serif";
-  ctx.fillText("LOADOUT // 特戰收藏", 38, 46);
-  ctx.fillStyle = "#63e9d8";
-  ctx.font = "700 13px Arial, sans-serif";
-  ctx.fillText("PERSONAL ARMORY  •  LOADOUT LAB", 40, 69);
   ctx.textAlign = "right";
   ctx.fillStyle = "#d7e8ef";
   ctx.font = "700 18px Arial, sans-serif";
@@ -299,22 +293,6 @@ function drawScene(
   ctx.shadowBlur = 0;
 
   items.forEach((item) => drawItem(ctx, item, item.uid === selected, images?.get(item.uid)));
-  if (!bgImage) {
-    ctx.fillStyle = "rgba(6,13,23,.82)";
-    ctx.fillRect(0, H - 58, W, 58);
-  } else {
-    ctx.shadowColor = "rgba(0,0,0,.82)";
-    ctx.shadowBlur = 8;
-  }
-  ctx.fillStyle = "#7ff4e4";
-  ctx.font = "700 13px Arial, sans-serif";
-  ctx.fillText("SW// LAB", 38, H - 24);
-  ctx.textAlign = "right";
-  ctx.fillStyle = "rgba(228,245,247,.7)";
-  ctx.font = "500 12px Arial, sans-serif";
-  ctx.fillText("DRAG  •  SCALE  •  CREATE", W - 38, H - 24);
-  ctx.textAlign = "left";
-  ctx.shadowBlur = 0;
 }
 
 function parseAccessToken(value: string) {
