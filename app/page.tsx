@@ -392,11 +392,6 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    const timer = window.setTimeout(() => void loadCatalog().catch(() => undefined), 0);
-    return () => window.clearTimeout(timer);
-  }, [loadCatalog]);
-
-  useEffect(() => {
     const persistentItems = items.filter((item) => !item.imageUrl?.startsWith("blob:"));
     localStorage.setItem("loadout-lab-scene", JSON.stringify(persistentItems));
   }, [items]);
@@ -454,8 +449,8 @@ export default function Home() {
     flash(`${asset.name} 已加入畫布`);
   };
 
-  const addText = () => {
-    const value = newText.trim();
+  const addText = (preset?: string) => {
+    const value = (preset || newText).trim();
     if (!value) return flash("請先輸入文字");
     uidSequence.current += 1;
     const item: SceneItem = {
@@ -482,6 +477,16 @@ export default function Home() {
     const clone = { ...current, uid: `${current.id}-${uidSequence.current}`, x: current.x + 24, y: current.y + 24 };
     setItems((previous) => [...previous, clone]);
     setSelected(clone.uid);
+  };
+
+  const openLibrary = () => {
+    setLibraryOpen(true);
+    void loadCatalog().catch(() => undefined);
+  };
+
+  const openImport = () => {
+    setImportStatus("");
+    setImportOpen(true);
   };
 
   const coords = (event: PointerEvent<HTMLCanvasElement>) => {
@@ -663,44 +668,40 @@ export default function Home() {
         <div className="brand"><span className="brand-mark">SW</span><span>LOADOUT LAB</span><i>特戰製圖工具</i></div>
         <div className="top-actions">
           <span className="status-dot" /><span className="privacy-label">本機處理 · 不儲存 Riot 憑證</span>
-          <button className="ghost-btn" onClick={() => setLibraryOpen(true)}>造型清單</button>
-          <button className="import-btn" onClick={() => { setImportStatus(""); setImportOpen(true); }}>匯入功能</button>
-          <button className="export-btn" onClick={exportPng}>↓ 匯出 PNG</button>
+          <button className="ghost-btn" onClick={openLibrary}>＋ 素材庫</button>
+          <button className="import-btn" onClick={openImport}>⇄ Riot 匯入</button>
+          <button className="export-btn" onClick={exportPng}>匯出 PNG</button>
         </div>
       </header>
 
       <section className="workspace">
-        <aside className="library-panel panel">
-          <div className="panel-head"><div><span className="eyebrow">01 / ASSETS</span><h2>VALORANT 素材庫</h2></div><span className="count">{filtered.length}</span></div>
-          <label className="search"><span>⌕</span><input aria-label="搜尋素材" placeholder="搜尋造型、武器、卡面…" value={search} onChange={(event) => setSearch(event.target.value)} /></label>
-          <div className="tabs" aria-label="素材類型">
-            {categoryTabs.map((tab) => <button key={tab.key} className={category === tab.key ? "active" : ""} onClick={() => setCategory(tab.key)}>{tab.label}</button>)}
-          </div>
-          <div className="asset-grid">{assetList(80)}</div>
-          {filtered.length > 80 && <button className="open-library" onClick={() => setLibraryOpen(true)}>查看全部 {filtered.length} 個素材</button>}
-          <label className="upload-row">＋ 上傳自訂圖片<input type="file" accept="image/*" onChange={loadCustom} /></label>
-        </aside>
-
         <section className="stage-panel panel">
           <div className="stage-head">
-            <div><span className="eyebrow">02 / COMPOSE</span><h1>收藏展示畫布</h1></div>
+            <div><span className="eyebrow">COMPOSE</span><h1>收藏展示畫布 <small>{items.length} 個物件</small></h1></div>
             <div className="canvas-tools">
-              <button onClick={() => { setItems([]); setSelected(null); flash("畫布已清空"); }}>↺ 重設</button>
-              <button disabled={!current} onClick={duplicateCurrent}>⧉ 複製</button>
-              <button disabled={!current} onClick={deleteCurrent}>⌫ 刪除選中</button>
+              <button title="清空整張畫布" onClick={() => { setItems([]); setSelected(null); flash("畫布已清空"); }}>重設</button>
+              <button title="複製選取物件" disabled={!current} onClick={duplicateCurrent}>複製</button>
+              <button title="刪除選取物件" disabled={!current} onClick={deleteCurrent}>刪除</button>
             </div>
+          </div>
+          <div className="quick-actions" aria-label="快速操作">
+            <button className="quick-primary" onClick={openLibrary}><span>01</span> 選擇造型</button>
+            <button onClick={openImport}><span>02</span> 匯入 Riot 收藏</button>
+            <label><span>03</span> 上傳背景<input type="file" accept="image/*" onChange={loadBackground} /></label>
+            <button onClick={() => addText("我的特戰收藏")}><span>＋</span> 加入文字</button>
+            <label><span>＋</span> 自訂圖片<input type="file" accept="image/*" onChange={loadCustom} /></label>
           </div>
           <div className="canvas-wrap">
             <canvas ref={canvasRef} width={W} height={H} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp} aria-label="可拖曳的特戰收藏畫布" />
-            {!items.length && <div className="empty-hint"><span>＋</span><strong>加入造型，或從 Riot 帳號匯入</strong><small>素材可以拖曳、縮放、旋轉與自由排版</small></div>}
+            {!items.length && !bgUrl && <div className="empty-hint"><span>開始製作</span><strong>先選一個造型，或匯入你的收藏</strong><small>接著上傳背景，再拖曳素材自由排版</small><div><button onClick={openLibrary}>開啟素材庫</button><button onClick={openImport}>匯入 Riot 收藏</button></div></div>}
           </div>
-          <div className="stage-foot"><span><b /> 自動儲存在這個裝置</span><span>1200 × 760 PX</span><span>拖曳移動 · 右下角縮放</span></div>
+          <div className="stage-foot"><span><b /> 自動儲存在這個裝置</span><span>1200 × 760 PX</span><span>拖曳移動 · 右下角縮放 · 點擊選取</span></div>
         </section>
 
         <aside className="inspector-panel panel">
-          <div className="panel-head"><div><span className="eyebrow">03 / DETAILS</span><h2>版面設定</h2></div></div>
+          <div className="panel-head"><div><span className="eyebrow">DETAILS</span><h2>編輯設定</h2></div>{current && <span className="selection-badge">已選取</span>}</div>
           <div className="control-section"><h3>帳號資訊</h3><div className="two-fields"><label>特務幣 VP<input value={vp} inputMode="numeric" onChange={(event) => setVp(event.target.value)} /></label><label>輻能點 RP<input value={rp} inputMode="numeric" onChange={(event) => setRp(event.target.value)} /></label></div></div>
-          <div className="control-section"><h3>加入文字</h3><div className="inline-add"><input value={newText} placeholder="輸入自訂文字" onChange={(event) => setNewText(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") addText(); }} /><button onClick={addText}>加入</button></div></div>
+          <div className="control-section"><h3>加入文字</h3><div className="inline-add"><input value={newText} placeholder="輸入自訂文字" onChange={(event) => setNewText(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") addText(); }} /><button onClick={() => addText()}>加入</button></div></div>
           <div className="control-section"><h3>畫布背景</h3><label className="dropzone"><span>▧</span><strong>更換背景圖片</strong><small>JPG、PNG 或 WEBP</small><input type="file" accept="image/*" onChange={loadBackground} /></label>{bgUrl && <button className="text-btn" onClick={() => { bgImageRef.current = undefined; setBgUrl(""); }}>移除自訂背景</button>}</div>
           <div className="control-section selection-section">
             <h3>選取項目</h3>
@@ -710,9 +711,9 @@ export default function Home() {
               <label className="range-label"><span>旋轉角度 <b>{Math.round(current.rotation)}°</b></span><input type="range" min="-180" max="180" value={current.rotation} onChange={(event) => updateCurrent({ rotation: Number(event.target.value) })} /></label>
               <label className="range-label"><span>寬度 <b>{Math.round(current.w)} px</b></span><input type="range" min="54" max="600" value={current.w} onChange={(event) => { const w = Number(event.target.value); updateCurrent({ w, h: current.h * w / current.w }); }} /></label>
               <div className="object-actions"><button onClick={() => updateCurrent({ rotation: 0 })}>角度歸零</button><button onClick={() => setItems((previous) => [...previous.filter((item) => item.uid !== current.uid), current])}>移到最上層</button></div>
-            </> : <div className="no-selection"><span>◇</span><p>點選畫布中的素材<br />即可調整詳細設定</p></div>}
+            </> : <div className="no-selection"><span>◇</span><p><strong>尚未選取物件</strong><br />點擊畫布中的造型或文字，即可調整大小、角度與圖層。</p></div>}
           </div>
-          <div className="tips"><span>TIP</span><p>匯入後的造型仍可逐一拖曳與縮放；驗證網址只用於這次匯入，不會儲存。</p></div>
+          <div className="tips"><span>提示</span><p>右下角拖曳可縮放物件；匯入驗證網址只用於當次操作，不會儲存。</p></div>
         </aside>
       </section>
 
