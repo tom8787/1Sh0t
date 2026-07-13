@@ -467,7 +467,7 @@ export default function Home() {
             type: weaponType(weapon.category),
             label: weapon.displayName,
             colors: colorsFromId(skin.uuid),
-            imageUrl: skin.displayIcon || skin.chromas?.find((chroma) => chroma.fullRender)?.fullRender || skin.levels?.find((level) => level.displayIcon)?.displayIcon || undefined,
+            imageUrl: skin.levels?.find((level) => level.displayIcon)?.displayIcon || skin.chromas?.find((chroma) => chroma.fullRender)?.fullRender || skin.displayIcon || undefined,
             levelIds: skin.levels?.map((level) => level.uuid.toLowerCase()) || [],
             isEffect: (skin.levels?.length || 0) > 1,
           })),
@@ -484,6 +484,11 @@ export default function Home() {
       const all = [...weaponAssets, ...bundleAssets, ...cardAssets, ...buddyAssets].filter((asset) => asset.imageUrl);
       catalogRef.current = all;
       setCatalog(all);
+      const currentImages = new Map(all.map((asset) => [asset.id, asset.imageUrl]));
+      setItems((previous) => previous.map((item) => {
+        const currentImage = currentImages.get(item.id);
+        return currentImage && currentImage !== item.imageUrl ? { ...item, imageUrl: currentImage } : item;
+      }));
       return all;
     } catch (error) {
       const message = error instanceof Error ? error.message : "造型資料暫時無法讀取";
@@ -493,6 +498,11 @@ export default function Home() {
       setCatalogLoading(false);
     }
   }, []);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => void loadCatalog().catch(() => undefined), 0);
+    return () => window.clearTimeout(timer);
+  }, [loadCatalog]);
 
   useEffect(() => {
     const persistentItems = items.filter((item) => !item.imageUrl?.startsWith("blob:"));
@@ -515,7 +525,9 @@ export default function Home() {
     const liveIds = new Set(items.map((item) => item.uid));
     for (const id of imageRefs.current.keys()) if (!liveIds.has(id)) imageRefs.current.delete(id);
     items.forEach((item) => {
-      if (!item.imageUrl || imageRefs.current.has(item.uid) || loadingImages.current.has(item.uid)) return;
+      const cachedImage = imageRefs.current.get(item.uid);
+      if (!item.imageUrl || cachedImage?.src === item.imageUrl || loadingImages.current.has(item.uid)) return;
+      if (cachedImage) imageRefs.current.delete(item.uid);
       loadingImages.current.add(item.uid);
       const image = new Image();
       if (/^https?:/i.test(item.imageUrl)) image.crossOrigin = "anonymous";
