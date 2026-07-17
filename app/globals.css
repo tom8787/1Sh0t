@@ -81,8 +81,24 @@ h3 { font-size: 12px; color: #91a7ae; letter-spacing: .08em; }
 .quick-actions .quick-primary { background: rgba(93,228,209,.12); border-color: #39796f; color: #82efe0; }
 .quick-actions span { color: #5de4d1; font: 800 9px monospace; }
 .quick-actions input { display: none; }
+.layout-bar { min-height: 42px; display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: -4px 0 12px; padding: 5px 7px; border: 1px solid #20363f; background: #08151b; }
+.layout-mode-switch, .page-controls { display: flex; align-items: center; gap: 5px; }
+.layout-mode-switch > span { margin: 0 7px 0 3px; color: #607a83; font-size: 9px; font-weight: 800; letter-spacing: .08em; }
+.layout-mode-switch button, .page-controls button { min-height: 30px; border: 1px solid #29424a; background: #0b1a20; color: #789198; padding: 6px 11px; font-size: 9px; font-weight: 800; cursor: pointer; }
+.layout-mode-switch button:hover, .page-controls button:hover { color: #b7d6d3; border-color: #4a746e; }
+.layout-mode-switch button.active { color: #061113; border-color: var(--accent); background: var(--accent); }
+.page-controls strong { min-width: 54px; text-align: center; color: #a9bdc1; font: 9px monospace; }
+.page-controls button:disabled { opacity: .3; cursor: not-allowed; }
+.page-controls .export-pages { border-color: #b84e5c; color: #ff9aa5; }
 .canvas-wrap { position: relative; margin: auto; width: 100%; max-width: calc((100vh - 235px) * 1.5789); box-shadow: 0 25px 70px rgba(0,0,0,.45),0 0 0 1px #1b323a; background: #07141c; }
+.canvas-wrap.long-canvas { max-width: 100%; }
 .canvas-wrap canvas { width: 100%; height: auto; display: block; touch-action: none; cursor: crosshair; }
+.floating-tools { position: absolute; z-index: 8; display: flex; align-items: center; gap: 3px; transform: translate(-50%,calc(-100% - 10px)); padding: 5px; border: 1px solid #416b69; background: rgba(4,13,18,.96); box-shadow: 0 12px 32px rgba(0,0,0,.5); backdrop-filter: blur(10px); }
+.floating-tools > span { padding: 0 7px; color: #7d989e; font: 8px monospace; white-space: nowrap; }
+.floating-tools button { min-height: 28px; border: 1px solid #29434b; background: #0b1b21; color: #a2b7bb; padding: 5px 8px; font-size: 8px; font-weight: 800; cursor: pointer; white-space: nowrap; }
+.floating-tools button:hover, .floating-tools button.active { color: #061113; border-color: var(--accent); background: var(--accent); }
+.floating-tools button.danger:hover { color: #fff; border-color: #ff5d70; background: #b84755; }
+.floating-tools input[type="color"] { width: 29px; height: 28px; border: 1px solid #38535b; background: #071217; padding: 2px; cursor: pointer; }
 .empty-hint { position: absolute; left: 50%; top: 50%; width: min(520px,80%); transform: translate(-50%,-45%); display: grid; justify-items: center; color: #a3bac0; text-align: center; padding: 24px; background: rgba(5,14,20,.78); border: 1px solid rgba(92,171,162,.35); backdrop-filter: blur(10px); }
 .empty-hint > span { color: var(--accent); margin-bottom: 9px; font: 800 10px monospace; letter-spacing: .16em; text-transform: uppercase; }
 .empty-hint strong { font-size: 15px; color: #e1eeee; }
@@ -322,6 +338,10 @@ h3 { font-size: 12px; color: #91a7ae; letter-spacing: .08em; }
   .stage-panel { order: 1; padding: 15px 12px; }
   .inspector-panel { order: 2; padding: 20px; max-height: none; position: static; }
   .canvas-wrap { max-width: none; }
+  .layout-bar { align-items: stretch; flex-direction: column; }
+  .layout-mode-switch, .page-controls { width: 100%; }
+  .layout-mode-switch button { flex: 1; }
+  .page-controls .export-pages { margin-left: auto; }
   .stage-head { gap: 10px; }
   .canvas-tools button { padding: 8px; }
   .stage-foot { overflow: auto; }
@@ -366,6 +386,9 @@ h3 { font-size: 12px; color: #91a7ae; letter-spacing: .08em; }
   .canvas-tools { gap: 2px; }
   .quick-actions { margin-bottom: 10px; }
   .quick-actions button, .quick-actions label { min-height: 38px; padding: 8px 10px; }
+  .layout-mode-switch > span { display: none; }
+  .page-controls { overflow-x: auto; }
+  .floating-tools { max-width: calc(100% - 12px); overflow-x: auto; transform: translate(-50%,calc(-100% - 6px)); }
   .empty-hint { width: 88%; padding: 16px 12px; }
   .empty-hint > div { flex-direction: column; width: 100%; }
 }

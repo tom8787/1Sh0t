@@ -39,6 +39,17 @@ type SceneItem = LibraryAsset & {
   outlineEnabled?: boolean;
   outlineColor?: string;
   outlineWidth?: number;
+  layoutPage?: number;
+};
+
+type LayoutMode = "single" | "long" | "pages";
+
+type SelectionRect = { x: number; y: number; w: number; h: number };
+
+type LayoutResult = {
+  items: SceneItem[];
+  height: number;
+  pages: number;
 };
 
 type ValorantSkin = {
@@ -284,37 +295,39 @@ function drawItem(ctx: CanvasRenderingContext2D, item: SceneItem, selected: bool
 function drawScene(
   ctx: CanvasRenderingContext2D,
   items: SceneItem[],
-  selected: string | null,
+  selectedIds: string[],
   vp: string,
   rp: string,
+  height: number,
   bgImage?: HTMLImageElement,
   images?: Map<string, HTMLImageElement>,
+  selectionRect?: SelectionRect | null,
 ) {
-  ctx.clearRect(0, 0, W, H);
+  ctx.clearRect(0, 0, W, height);
   if (bgImage) {
-    drawCoverImage(ctx, bgImage, W, H);
+    drawCoverImage(ctx, bgImage, W, height);
   } else {
-    const bg = ctx.createLinearGradient(0, 0, W, H);
+    const bg = ctx.createLinearGradient(0, 0, W, height);
     bg.addColorStop(0, "#07131f");
     bg.addColorStop(.52, "#0b3445");
     bg.addColorStop(1, "#11182b");
     ctx.fillStyle = bg;
-    ctx.fillRect(0, 0, W, H);
+    ctx.fillRect(0, 0, W, height);
     ctx.fillStyle = "rgba(76,242,218,.08)";
     ctx.beginPath();
-    ctx.moveTo(0, 560);
-    ctx.lineTo(W, 160);
-    ctx.lineTo(W, H);
-    ctx.lineTo(0, H);
+    ctx.moveTo(0, height * .74);
+    ctx.lineTo(W, height * .21);
+    ctx.lineTo(W, height);
+    ctx.lineTo(0, height);
     ctx.fill();
     ctx.strokeStyle = "rgba(126,236,225,.11)";
     for (let x = -200; x < W + 200; x += 90) {
       ctx.beginPath();
-      ctx.moveTo(x, H);
+      ctx.moveTo(x, height);
       ctx.lineTo(x + 460, 0);
       ctx.stroke();
     }
-    for (let y = 120; y < H; y += 84) {
+    for (let y = 120; y < height; y += 84) {
       ctx.beginPath();
       ctx.moveTo(0, y);
       ctx.lineTo(W, y);
@@ -335,7 +348,37 @@ function drawScene(
   ctx.textAlign = "left";
   ctx.shadowBlur = 0;
 
-  items.forEach((item) => drawItem(ctx, item, item.uid === selected, images?.get(item.uid)));
+  const weaponGroups = new Map<string, { y: number; count: number; minHeight: number }>();
+  items.filter(isWeaponItem).forEach((item) => {
+    const current = weaponGroups.get(item.label);
+    weaponGroups.set(item.label, {
+      y: Math.min(current?.y ?? item.y, item.y),
+      count: (current?.count || 0) + 1,
+      minHeight: Math.min(current?.minHeight ?? item.h, item.h),
+    });
+  });
+  weaponGroups.forEach((group, label) => {
+    const fontSize = Math.max(7, Math.min(12, group.minHeight * .22));
+    const labelY = Math.max(96, group.y - Math.max(5, fontSize + 4));
+    ctx.fillStyle = "rgba(5,14,20,.76)";
+    ctx.fillRect(26, labelY - fontSize - 4, W - 52, fontSize + 8);
+    ctx.fillStyle = "#6de9d8";
+    ctx.font = `800 ${fontSize}px Arial, "Noto Sans TC", sans-serif`;
+    ctx.fillText(`${label} · ${group.count} 個造型`, 34, labelY);
+  });
+
+  const selectedSet = new Set(selectedIds);
+  items.forEach((item) => drawItem(ctx, item, selectedSet.has(item.uid), images?.get(item.uid)));
+  if (selectionRect) {
+    ctx.save();
+    ctx.fillStyle = "rgba(93,228,209,.12)";
+    ctx.strokeStyle = "#62f1df";
+    ctx.lineWidth = 2;
+    ctx.setLineDash([7, 5]);
+    ctx.fillRect(selectionRect.x, selectionRect.y, selectionRect.w, selectionRect.h);
+    ctx.strokeRect(selectionRect.x, selectionRect.y, selectionRect.w, selectionRect.h);
+    ctx.restore();
+  }
 }
 
 function parseAccessToken(value: string) {
@@ -389,40 +432,96 @@ function isWeaponItem(item: SceneItem) {
   return ["rifle", "sniper", "sidearm", "melee"].includes(item.type);
 }
 
-function arrangeWeaponItems(sceneItems: SceneItem[]) {
+const WEAPON_ORDER = [
+  "制式手槍", "短管", "狂弒", "鬼魅", "警長",
+  "刺針", "惡靈", "重砲", "判官",
+  "鬥牛犬", "捍衛者", "幻象", "暴徒",
+  "神射", "盜賊", "間諜", "戰神", "奧丁", "近戰武器",
+];
+
+function arrangeGroupedItems(sceneItems: SceneItem[], mode: LayoutMode): LayoutResult {
   const weaponItems = sceneItems.filter(isWeaponItem);
-  if (!weaponItems.length) return sceneItems;
+  if (!weaponItems.length) return { items: sceneItems, height: H, pages: 1 };
 
-  const count = weaponItems.length;
-  const columns = count <= 20 ? 4 : count <= 42 ? 6 : Math.min(20, Math.max(8, Math.ceil(count / 10)));
-  const rows = Math.ceil(count / columns);
-  const left = 28;
-  const top = 98;
+  const groups = new Map<string, SceneItem[]>();
+  weaponItems.forEach((item) => {
+    const label = item.label || "其他武器";
+    groups.set(label, [...(groups.get(label) || []), item]);
+  });
+  const orderedGroups = [...groups.entries()].sort(([a], [b]) => {
+    const aIndex = WEAPON_ORDER.indexOf(a);
+    const bIndex = WEAPON_ORDER.indexOf(b);
+    if (aIndex >= 0 || bIndex >= 0) return (aIndex < 0 ? 999 : aIndex) - (bIndex < 0 ? 999 : bIndex);
+    return a.localeCompare(b, "zh-TW");
+  });
+
+  const columns = 10;
+  const left = 32;
+  const top = 104;
+  const bottom = 26;
+  const headerHeight = 28;
+  const sectionGap = 12;
   const cellW = (W - left * 2) / columns;
-  const cellH = (H - top - 26) / Math.max(rows, 1);
-  const arranged = new Map(weaponItems.map((item, index) => [item.uid, {
-    ...item,
-    x: left + (index % columns) * cellW + 5,
-    y: top + Math.floor(index / columns) * cellH + 3,
-    w: Math.max(38, cellW - 10),
-    h: Math.max(22, Math.min(82, cellH - 6)),
-    rotation: 0,
-  }]));
+  const itemHeight = 56;
+  const rowHeight = 64;
+  const arranged = new Map<string, SceneItem>();
+  let y = top;
+  let page = 0;
 
-  return sceneItems.map((item) => arranged.get(item.uid) || item);
+  orderedGroups.forEach(([, rawItems]) => {
+    const groupItems = [...rawItems].sort((a, b) => a.name.localeCompare(b.name, "zh-TW"));
+    const rows = Math.ceil(groupItems.length / columns);
+    const sectionHeight = headerHeight + rows * rowHeight + sectionGap;
+    if (mode === "pages" && y > top && y + sectionHeight > H - bottom) {
+      page += 1;
+      y = top;
+    }
+    groupItems.forEach((item, index) => arranged.set(item.uid, {
+      ...item,
+      x: left + (index % columns) * cellW + 5,
+      y: y + headerHeight + Math.floor(index / columns) * rowHeight,
+      w: cellW - 10,
+      h: itemHeight,
+      rotation: 0,
+      layoutPage: mode === "pages" ? page : 0,
+    }));
+    y += sectionHeight;
+  });
+
+  let height = mode === "long" ? Math.max(H, Math.ceil(y + bottom)) : H;
+  if (mode === "single" && y + bottom > H) {
+    const scale = (H - top - bottom) / Math.max(1, y - top);
+    arranged.forEach((item, uid) => arranged.set(uid, {
+      ...item,
+      y: top + (item.y - top) * scale,
+      h: Math.max(12, item.h * scale),
+    }));
+    height = H;
+  }
+
+  const nextItems = sceneItems.map((item) => arranged.get(item.uid) || { ...item, layoutPage: 0 });
+  return { items: nextItems, height, pages: mode === "pages" ? page + 1 : 1 };
 }
 
 function savedScene(): SceneItem[] {
   if (typeof window === "undefined") return [];
   try {
     const saved = JSON.parse(localStorage.getItem("loadout-lab-scene") || "[]");
-    if (!Array.isArray(saved)) return [];
-    const weaponItems = (saved as SceneItem[]).filter(isWeaponItem);
-    const hasClippedItems = weaponItems.some((item) => item.x < 0 || item.y < 86 || item.x + item.w > W || item.y + item.h > H);
-    return weaponItems.length > 42 && hasClippedItems ? arrangeWeaponItems(saved as SceneItem[]) : saved;
+    return Array.isArray(saved) ? saved : [];
   } catch {
     return [];
   }
+}
+
+function savedLayoutMode(): LayoutMode {
+  if (typeof window === "undefined") return "single";
+  const saved = localStorage.getItem("loadout-lab-layout-mode");
+  return saved === "long" || saved === "pages" ? saved : "single";
+}
+
+function savedCanvasHeight() {
+  if (typeof window === "undefined") return H;
+  return Math.max(H, Number(localStorage.getItem("loadout-lab-canvas-height") || H));
 }
 
 export default function Home() {
@@ -432,10 +531,30 @@ export default function Home() {
   const loadingImages = useRef(new Set<string>());
   const catalogRef = useRef<LibraryAsset[]>([]);
   const uidSequence = useRef(0);
-  const dragRef = useRef<{ uid: string; dx: number; dy: number; resize: boolean } | null>(null);
+  const dragRef = useRef<{
+    mode: "move" | "resize" | "marquee";
+    startX: number;
+    startY: number;
+    ids: string[];
+    origins: { uid: string; x: number; y: number; w: number; h: number }[];
+    baseSelection: string[];
+  } | null>(null);
 
-  const [items, setItems] = useState<SceneItem[]>(savedScene);
-  const [selected, setSelected] = useState<string | null>(null);
+  const [items, setItems] = useState<SceneItem[]>(() => {
+    const savedItems = savedScene();
+    const needsLayoutMigration = typeof window !== "undefined" && !localStorage.getItem("loadout-lab-layout-mode");
+    return needsLayoutMigration ? arrangeGroupedItems(savedItems, savedLayoutMode()).items : savedItems;
+  });
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const setSelected = useCallback((uid: string | null) => setSelectedIds(uid ? [uid] : []), []);
+  const [selectionRect, setSelectionRect] = useState<SelectionRect | null>(null);
+  const [layoutMode, setLayoutMode] = useState<LayoutMode>(savedLayoutMode);
+  const [canvasHeight, setCanvasHeight] = useState(() => {
+    const savedItems = savedScene();
+    const needsLayoutMigration = typeof window !== "undefined" && !localStorage.getItem("loadout-lab-layout-mode");
+    return needsLayoutMigration ? arrangeGroupedItems(savedItems, savedLayoutMode()).height : savedCanvasHeight();
+  });
+  const [currentPage, setCurrentPage] = useState(0);
   const [catalog, setCatalog] = useState<LibraryAsset[]>([]);
   const [category, setCategory] = useState<CatalogCategory>("all");
   const [search, setSearch] = useState("");
@@ -540,6 +659,11 @@ export default function Home() {
   }, [items]);
 
   useEffect(() => {
+    localStorage.setItem("loadout-lab-layout-mode", layoutMode);
+    localStorage.setItem("loadout-lab-canvas-height", String(canvasHeight));
+  }, [layoutMode, canvasHeight]);
+
+  useEffect(() => {
     const syncPage = () => setActivePage(window.location.hash === "#/tools" ? "tools" : "editor");
     window.addEventListener("hashchange", syncPage);
     return () => window.removeEventListener("hashchange", syncPage);
@@ -598,13 +722,26 @@ export default function Home() {
     };
   }, [recentMatches]);
 
-  const current = items.find((item) => item.uid === selected);
-  const canOutline = Boolean(current?.imageUrl && ["rifle", "sniper", "sidearm", "melee"].includes(current.type));
+  const pageCount = useMemo(() => layoutMode === "pages"
+    ? Math.max(1, ...items.map((item) => (item.layoutPage || 0) + 1))
+    : 1, [items, layoutMode]);
+  const visibleItems = useMemo(() => layoutMode === "pages"
+    ? items.filter((item) => (item.layoutPage || 0) === currentPage)
+    : items, [items, layoutMode, currentPage]);
+  const selectedItems = items.filter((item) => selectedIds.includes(item.uid));
+  const current = selectedItems[0];
+  const canOutline = Boolean(selectedItems.length && selectedItems.every((item) => item.imageUrl && ["rifle", "sniper", "sidearm", "melee"].includes(item.type)));
+  const selectionBounds = selectedItems.length ? {
+    x: Math.min(...selectedItems.map((item) => item.x)),
+    y: Math.min(...selectedItems.map((item) => item.y)),
+    right: Math.max(...selectedItems.map((item) => item.x + item.w)),
+    bottom: Math.max(...selectedItems.map((item) => item.y + item.h)),
+  } : null;
 
   useEffect(() => {
     const ctx = canvasRef.current?.getContext("2d");
-    if (ctx) drawScene(ctx, items, selected, vp, rp, bgImageRef.current, imageRefs.current);
-  }, [items, selected, vp, rp, bgUrl, imageRevision]);
+    if (ctx) drawScene(ctx, visibleItems, selectedIds, vp, rp, canvasHeight, bgImageRef.current, imageRefs.current, selectionRect);
+  }, [visibleItems, selectedIds, vp, rp, bgUrl, imageRevision, canvasHeight, selectionRect]);
 
   const addAsset = (asset: LibraryAsset) => {
     const same = items.filter((item) => item.type === asset.type).length;
@@ -620,7 +757,7 @@ export default function Home() {
     };
     const p = presets[asset.type] || presets.image;
     uidSequence.current += 1;
-    const item: SceneItem = { ...asset, uid: `${asset.id}-${uidSequence.current}`, ...p, rotation: 0 };
+    const item: SceneItem = { ...asset, uid: `${asset.id}-${uidSequence.current}`, ...p, rotation: 0, layoutPage: currentPage };
     setItems((previous) => [...previous, item]);
     setSelected(item.uid);
     flash(`${asset.name} 已加入畫布`);
@@ -633,7 +770,7 @@ export default function Home() {
     const item: SceneItem = {
       id: `text-${uidSequence.current}`, uid: `text-${uidSequence.current}`, name: value, text: value, type: "text", label: "自訂文字",
       colors: ["#ffffff", "#ffffff", "#ffffff"], textColor: "#ffffff", fontSize: 42,
-      x: 430, y: 600, w: Math.min(520, Math.max(180, value.length * 48)), h: 64, rotation: 0,
+      x: 430, y: 600, w: Math.min(520, Math.max(180, value.length * 48)), h: 64, rotation: 0, layoutPage: currentPage,
     };
     setItems((previous) => [...previous, item]);
     setSelected(item.uid);
@@ -641,25 +778,80 @@ export default function Home() {
     flash("文字已加入畫布");
   };
 
-  const updateCurrent = (patch: Partial<SceneItem>) => setItems((previous) => previous.map((item) => item.uid === selected ? { ...item, ...patch } : item));
+  const updateCurrent = (patch: Partial<SceneItem>) => setItems((previous) => previous.map((item) => selectedIds.includes(item.uid) ? { ...item, ...patch } : item));
   const deleteCurrent = () => {
-    if (!selected) return;
-    setItems((previous) => previous.filter((item) => item.uid !== selected));
+    if (!selectedIds.length) return;
+    setItems((previous) => previous.filter((item) => !selectedIds.includes(item.uid)));
     setSelected(null);
-    flash("已刪除選取項目");
+    flash(`已刪除 ${selectedIds.length} 個選取項目`);
   };
   const duplicateCurrent = () => {
-    if (!current) return;
-    uidSequence.current += 1;
-    const clone = { ...current, uid: `${current.id}-${uidSequence.current}`, x: current.x + 24, y: current.y + 24 };
-    setItems((previous) => [...previous, clone]);
-    setSelected(clone.uid);
+    if (!selectedItems.length) return;
+    const clones = selectedItems.map((item) => {
+      uidSequence.current += 1;
+      return { ...item, uid: `${item.id}-${uidSequence.current}`, x: item.x + 24, y: item.y + 24 };
+    });
+    setItems((previous) => [...previous, ...clones]);
+    setSelectedIds(clones.map((item) => item.uid));
   };
 
   const arrangeCollection = () => {
-    setItems((previous) => arrangeWeaponItems(previous));
+    const arranged = arrangeGroupedItems(items, layoutMode);
+    setItems(arranged.items);
+    setCanvasHeight(arranged.height);
+    setCurrentPage(0);
     setSelected(null);
-    flash("所有造型已自動排列在畫布內");
+    flash("已依官方武器名稱重新分類排列");
+  };
+
+  const changeLayoutMode = (mode: LayoutMode) => {
+    const arranged = arrangeGroupedItems(items, mode);
+    setLayoutMode(mode);
+    setItems(arranged.items);
+    setCanvasHeight(arranged.height);
+    setCurrentPage(0);
+    setSelected(null);
+    flash(mode === "single" ? "已切換單張模式" : mode === "long" ? "已切換長圖模式" : `已切換多頁模式，共 ${arranged.pages} 頁`);
+  };
+
+  const scaleSelection = (factor: number) => {
+    if (!selectionBounds) return;
+    const centerX = (selectionBounds.x + selectionBounds.right) / 2;
+    const centerY = (selectionBounds.y + selectionBounds.bottom) / 2;
+    setItems((previous) => previous.map((item) => selectedIds.includes(item.uid) ? {
+      ...item,
+      x: centerX + (item.x - centerX) * factor,
+      y: centerY + (item.y - centerY) * factor,
+      w: Math.max(24, item.w * factor),
+      h: Math.max(16, item.h * factor),
+    } : item));
+  };
+
+  const alignSelection = () => {
+    if (!selectedItems.length) return;
+    const ordered = [...selectedItems].sort((a, b) => a.x - b.x);
+    const startX = Math.max(12, Math.min(...ordered.map((item) => item.x)));
+    const commonY = Math.max(88, Math.min(...ordered.map((item) => item.y)));
+    let cursor = startX;
+    const aligned = new Map<string, { x: number; y: number }>();
+    ordered.forEach((item) => {
+      if (cursor + item.w > W - 12) cursor = 12;
+      aligned.set(item.uid, { x: cursor, y: commonY });
+      cursor += item.w + 8;
+    });
+    setItems((previous) => previous.map((item) => aligned.has(item.uid) ? { ...item, ...aligned.get(item.uid)! } : item));
+    flash("選取造型已水平對齊");
+  };
+
+  const bringSelectionToFront = () => setItems((previous) => [
+    ...previous.filter((item) => !selectedIds.includes(item.uid)),
+    ...previous.filter((item) => selectedIds.includes(item.uid)),
+  ]);
+
+  const toggleSelectionOutline = () => {
+    if (!canOutline) return;
+    const enable = !selectedItems.every((item) => item.outlineEnabled);
+    updateCurrent({ outlineEnabled: enable, outlineColor: current?.outlineColor || "#f3a3b4", outlineWidth: current?.outlineWidth || 10 });
   };
 
   const openLibrary = () => {
@@ -674,32 +866,71 @@ export default function Home() {
 
   const coords = (event: PointerEvent<HTMLCanvasElement>) => {
     const rect = event.currentTarget.getBoundingClientRect();
-    return { x: (event.clientX - rect.left) * W / rect.width, y: (event.clientY - rect.top) * H / rect.height };
+    return { x: (event.clientX - rect.left) * W / rect.width, y: (event.clientY - rect.top) * canvasHeight / rect.height };
   };
   const onPointerDown = (event: PointerEvent<HTMLCanvasElement>) => {
     const point = coords(event);
-    const hit = [...items].reverse().find((item) => point.x >= item.x - 8 && point.x <= item.x + item.w + 8 && point.y >= item.y - 8 && point.y <= item.y + item.h + 8);
-    if (!hit) return setSelected(null);
     event.currentTarget.setPointerCapture(event.pointerId);
-    setSelected(hit.uid);
-    const resize = Math.abs(point.x - (hit.x + hit.w)) < 28 && Math.abs(point.y - (hit.y + hit.h)) < 28;
-    dragRef.current = { uid: hit.uid, dx: point.x - hit.x, dy: point.y - hit.y, resize };
+    const hit = [...visibleItems].reverse().find((item) => point.x >= item.x - 8 && point.x <= item.x + item.w + 8 && point.y >= item.y - 8 && point.y <= item.y + item.h + 8);
+    if (!hit) {
+      if (!event.shiftKey) setSelectedIds([]);
+      setSelectionRect({ x: point.x, y: point.y, w: 0, h: 0 });
+      dragRef.current = { mode: "marquee", startX: point.x, startY: point.y, ids: [], origins: [], baseSelection: event.shiftKey ? selectedIds : [] };
+      return;
+    }
+
+    let nextSelected = selectedIds;
+    if (event.shiftKey) {
+      nextSelected = selectedIds.includes(hit.uid) ? selectedIds.filter((uid) => uid !== hit.uid) : [...selectedIds, hit.uid];
+      setSelectedIds(nextSelected);
+      if (!nextSelected.includes(hit.uid)) {
+        event.currentTarget.releasePointerCapture(event.pointerId);
+        return;
+      }
+    } else if (!selectedIds.includes(hit.uid)) {
+      nextSelected = [hit.uid];
+      setSelectedIds(nextSelected);
+    }
+    const resize = nextSelected.length === 1 && Math.abs(point.x - (hit.x + hit.w)) < 28 && Math.abs(point.y - (hit.y + hit.h)) < 28;
+    const origins = items.filter((item) => nextSelected.includes(item.uid)).map((item) => ({ uid: item.uid, x: item.x, y: item.y, w: item.w, h: item.h }));
+    dragRef.current = { mode: resize ? "resize" : "move", startX: point.x, startY: point.y, ids: nextSelected, origins, baseSelection: [] };
   };
   const onPointerMove = (event: PointerEvent<HTMLCanvasElement>) => {
     if (!dragRef.current) return;
     const point = coords(event);
     const drag = dragRef.current;
-    setItems((previous) => previous.map((item) => item.uid !== drag.uid ? item : drag.resize
-      ? { ...item, w: Math.max(54, point.x - item.x), h: Math.max(48, point.y - item.y) }
-      : {
-        ...item,
-        x: Math.max(-item.w * .7, Math.min(W - item.w * .3, point.x - drag.dx)),
-        y: Math.max(0, Math.min(H - item.h * .3, point.y - drag.dy)),
-      }));
+    if (drag.mode === "marquee") {
+      setSelectionRect({ x: Math.min(drag.startX, point.x), y: Math.min(drag.startY, point.y), w: Math.abs(point.x - drag.startX), h: Math.abs(point.y - drag.startY) });
+      return;
+    }
+    const dxRaw = point.x - drag.startX;
+    const dyRaw = point.y - drag.startY;
+    if (drag.mode === "resize") {
+      const origin = drag.origins[0];
+      setItems((previous) => previous.map((item) => item.uid === origin.uid ? { ...item, w: Math.max(38, origin.w + dxRaw), h: Math.max(22, origin.h + dyRaw) } : item));
+      return;
+    }
+    const minX = Math.min(...drag.origins.map((item) => item.x));
+    const minY = Math.min(...drag.origins.map((item) => item.y));
+    const maxRight = Math.max(...drag.origins.map((item) => item.x + item.w));
+    const maxBottom = Math.max(...drag.origins.map((item) => item.y + item.h));
+    const dx = Math.max(-minX, Math.min(W - maxRight, dxRaw));
+    const dy = Math.max(-minY, Math.min(canvasHeight - maxBottom, dyRaw));
+    const origins = new Map(drag.origins.map((item) => [item.uid, item]));
+    setItems((previous) => previous.map((item) => {
+      const origin = origins.get(item.uid);
+      return origin ? { ...item, x: origin.x + dx, y: origin.y + dy } : item;
+    }));
   };
   const onPointerUp = (event: PointerEvent<HTMLCanvasElement>) => {
+    const drag = dragRef.current;
+    if (drag?.mode === "marquee" && selectionRect) {
+      const matches = visibleItems.filter((item) => item.x < selectionRect.x + selectionRect.w && item.x + item.w > selectionRect.x && item.y < selectionRect.y + selectionRect.h && item.y + item.h > selectionRect.y).map((item) => item.uid);
+      setSelectedIds([...new Set([...drag.baseSelection, ...matches])]);
+    }
     if (dragRef.current && event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
     dragRef.current = null;
+    setSelectionRect(null);
   };
 
   const loadBackground = (event: ChangeEvent<HTMLInputElement>) => {
@@ -728,7 +959,7 @@ export default function Home() {
       imageRefs.current.set(uid, image);
       const item: SceneItem = {
         id: uid, uid, name: file.name, type: "image", label: "自訂圖片", colors: ["#fff", "#fff", "#fff"],
-        x: 450, y: 220, w, h, rotation: 0, imageUrl: url,
+        x: 450, y: 220, w, h, rotation: 0, imageUrl: url, layoutPage: currentPage,
       };
       setItems((previous) => [...previous, item]);
       setSelected(uid);
@@ -737,21 +968,49 @@ export default function Home() {
     image.src = url;
   };
 
+  const renderExportCanvas = (page = currentPage) => {
+    const canvas = document.createElement("canvas");
+    canvas.width = W;
+    canvas.height = layoutMode === "long" ? canvasHeight : H;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("無法建立匯出畫布");
+    const exportItems = layoutMode === "pages" ? items.filter((item) => (item.layoutPage || 0) === page) : items;
+    drawScene(ctx, exportItems, [], vp, rp, canvas.height, bgImageRef.current, imageRefs.current);
+    return canvas;
+  };
+
   const exportPng = () => {
     try {
-      const canvas = document.createElement("canvas");
-      canvas.width = W;
-      canvas.height = H;
-      const ctx = canvas.getContext("2d");
-      if (!ctx) return;
-      drawScene(ctx, items, null, vp, rp, bgImageRef.current, imageRefs.current);
+      const canvas = renderExportCanvas();
       const link = document.createElement("a");
-      link.download = `特戰收藏-${new Date().toISOString().slice(0, 10)}.png`;
+      link.download = `特戰收藏-${layoutMode === "pages" ? `第${currentPage + 1}頁-` : ""}${new Date().toISOString().slice(0, 10)}.png`;
       link.href = canvas.toDataURL("image/png");
       link.click();
-      flash("高畫質 PNG 已匯出");
+      flash(layoutMode === "pages" ? `第 ${currentPage + 1} 頁 PNG 已匯出` : "高畫質 PNG 已匯出");
     } catch {
       flash("圖片仍在載入，請稍後再匯出");
+    }
+  };
+
+  const exportAllPages = async () => {
+    if (layoutMode !== "pages") return exportPng();
+    try {
+      const { default: JSZip } = await import("jszip");
+      const zip = new JSZip();
+      for (let page = 0; page < pageCount; page += 1) {
+        const canvas = renderExportCanvas(page);
+        const blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob((value) => value ? resolve(value) : reject(new Error("PNG 建立失敗")), "image/png"));
+        zip.file(`特戰收藏-第${page + 1}頁.png`, blob);
+      }
+      const archive = await zip.generateAsync({ type: "blob" });
+      const link = document.createElement("a");
+      link.download = `特戰收藏-全部頁面-${new Date().toISOString().slice(0, 10)}.zip`;
+      link.href = URL.createObjectURL(archive);
+      link.click();
+      window.setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+      flash(`已匯出 ${pageCount} 頁 ZIP`);
+    } catch {
+      flash("多頁匯出失敗，請稍後再試");
     }
   };
 
@@ -818,7 +1077,10 @@ export default function Home() {
         h: 60,
         rotation: 0,
       }));
-      setItems((previous) => arrangeWeaponItems([...previous, ...imported]));
+      const arrangedImport = arrangeGroupedItems([...items, ...imported], layoutMode);
+      setItems(arrangedImport.items);
+      setCanvasHeight(arrangedImport.height);
+      setCurrentPage(0);
       setSelected(imported[0]?.uid || null);
       setAuthUrl("");
       setImportStatus(`完成：已匯入 ${imported.length} 個造型。`);
@@ -1124,7 +1386,7 @@ export default function Home() {
           <button className="ghost-btn" onClick={openLibrary}>＋ 素材庫</button>
           <a className="tools-btn" href="#/tools" onClick={() => setToolsStatus("")}>實用小工具</a>
           <button className="import-btn" onClick={openImport}>⇄ Riot 匯入</button>
-          <button className="export-btn" onClick={exportPng}>匯出 PNG</button>
+          <button className="export-btn" onClick={exportPng}>{layoutMode === "pages" ? "匯出本頁" : "匯出 PNG"}</button>
         </div>
       </header>
 
@@ -1146,15 +1408,30 @@ export default function Home() {
             <button onClick={() => addText("我的特戰收藏")}><span>＋</span> 加入文字</button>
             <label><span>＋</span> 自訂圖片<input type="file" accept="image/*" onChange={loadCustom} /></label>
           </div>
-          <div className="canvas-wrap">
-            <canvas ref={canvasRef} width={W} height={H} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp} aria-label="可拖曳的特戰收藏畫布" />
+          <div className="layout-bar">
+            <div className="layout-mode-switch"><span>排列模式</span><button className={layoutMode === "single" ? "active" : ""} onClick={() => changeLayoutMode("single")}>單張</button><button className={layoutMode === "long" ? "active" : ""} onClick={() => changeLayoutMode("long")}>長圖</button><button className={layoutMode === "pages" ? "active" : ""} onClick={() => changeLayoutMode("pages")}>多頁</button></div>
+            {layoutMode === "pages" && <div className="page-controls"><button disabled={currentPage === 0} onClick={() => { setCurrentPage((page) => Math.max(0, page - 1)); setSelected(null); }}>←</button><strong>{currentPage + 1} / {pageCount}</strong><button disabled={currentPage >= pageCount - 1} onClick={() => { setCurrentPage((page) => Math.min(pageCount - 1, page + 1)); setSelected(null); }}>→</button><button className="export-pages" onClick={() => void exportAllPages()}>全部頁面 ZIP</button></div>}
+          </div>
+          <div className={`canvas-wrap ${layoutMode === "long" ? "long-canvas" : ""}`}>
+            <canvas ref={canvasRef} width={W} height={canvasHeight} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp} aria-label="可拖曳並可框選多個造型的特戰收藏畫布" />
+            {selectionBounds && selectedItems.some((item) => visibleItems.includes(item)) && <div className="floating-tools" style={{ left: `${Math.max(12, Math.min(88, ((selectionBounds.x + selectionBounds.right) / 2) / W * 100))}%`, top: `${Math.max(3, selectionBounds.y / canvasHeight * 100)}%` }}>
+              <span>{selectedIds.length} 個</span>
+              <button title="縮小" onClick={() => scaleSelection(.9)}>−</button>
+              <button title="放大" onClick={() => scaleSelection(1.1)}>＋</button>
+              {canOutline && <button className={selectedItems.every((item) => item.outlineEnabled) ? "active" : ""} title="切換外框" onClick={toggleSelectionOutline}>外框</button>}
+              {canOutline && selectedItems.some((item) => item.outlineEnabled) && <input type="color" aria-label="選取項目的外框顏色" value={current?.outlineColor || "#f3a3b4"} onChange={(event) => updateCurrent({ outlineColor: event.target.value })} />}
+              <button title="複製" onClick={duplicateCurrent}>複製</button>
+              <button title="水平對齊" onClick={alignSelection}>對齊</button>
+              <button title="移到最上層" onClick={bringSelectionToFront}>置頂</button>
+              <button className="danger" title="刪除" onClick={deleteCurrent}>刪除</button>
+            </div>}
             {!items.length && !bgUrl && <div className="empty-hint"><span>開始製作</span><strong>先選一個造型，或匯入你的收藏</strong><small>接著上傳背景，再拖曳素材自由排版</small><div><button onClick={openLibrary}>開啟素材庫</button><button onClick={openImport}>匯入 Riot 收藏</button></div></div>}
           </div>
-          <div className="stage-foot"><span><b /> 自動儲存在這個裝置</span><span>1200 × 760 PX</span><span>拖曳移動 · 右下角縮放 · 點擊選取</span></div>
+          <div className="stage-foot"><span><b /> 自動儲存在這個裝置</span><span>1200 × {canvasHeight} PX{layoutMode === "pages" ? ` · 第 ${currentPage + 1}/${pageCount} 頁` : ""}</span><span>空白處拖曳框選 · Shift 加選 · 整組移動</span></div>
         </section>
 
         <aside className="inspector-panel panel">
-          <div className="panel-head"><div><span className="eyebrow">DETAILS</span><h2>編輯設定</h2></div>{current && <span className="selection-badge">已選取</span>}</div>
+          <div className="panel-head"><div><span className="eyebrow">DETAILS</span><h2>編輯設定</h2></div>{current && <span className="selection-badge">已選取 {selectedIds.length} 個</span>}</div>
           <div className="control-section"><h3>帳號資訊</h3><div className="two-fields"><label>特務幣 VP<input value={vp} inputMode="numeric" onChange={(event) => setVp(event.target.value)} /></label><label>輻能點 RP<input value={rp} inputMode="numeric" onChange={(event) => setRp(event.target.value)} /></label></div></div>
           <div className="control-section"><h3>加入文字</h3><div className="inline-add"><input value={newText} placeholder="輸入自訂文字" onChange={(event) => setNewText(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") addText(); }} /><button onClick={() => addText()}>加入</button></div></div>
           <div className="control-section"><h3>畫布背景</h3><label className="dropzone"><span>▧</span><strong>更換背景圖片</strong><small>JPG、PNG 或 WEBP</small><input type="file" accept="image/*" onChange={loadBackground} /></label>{bgUrl && <button className="text-btn" onClick={() => { bgImageRef.current = undefined; setBgUrl(""); }}>移除自訂背景</button>}</div>
@@ -1173,8 +1450,8 @@ export default function Home() {
               </div>}
               <label className="range-label"><span>旋轉角度 <b>{Math.round(current.rotation)}°</b></span><input type="range" min="-180" max="180" value={current.rotation} onChange={(event) => updateCurrent({ rotation: Number(event.target.value) })} /></label>
               <label className="range-label"><span>寬度 <b>{Math.round(current.w)} px</b></span><input type="range" min="54" max="600" value={current.w} onChange={(event) => { const w = Number(event.target.value); updateCurrent({ w, h: current.h * w / current.w }); }} /></label>
-              <div className="object-actions"><button onClick={() => updateCurrent({ rotation: 0 })}>角度歸零</button><button onClick={() => setItems((previous) => [...previous.filter((item) => item.uid !== current.uid), current])}>移到最上層</button></div>
-            </> : <div className="no-selection"><span>◇</span><p><strong>尚未選取物件</strong><br />點擊畫布中的造型或文字，即可調整大小、角度與圖層。</p></div>}
+              <div className="object-actions"><button onClick={() => updateCurrent({ rotation: 0 })}>角度歸零</button><button onClick={bringSelectionToFront}>移到最上層</button></div>
+            </> : <div className="no-selection"><span>◇</span><p><strong>尚未選取物件</strong><br />點擊單選、按住 Shift 加選，或在空白處拖曳框選多個造型。</p></div>}
           </div>
           <div className="tips"><span>提示</span><p>右下角拖曳可縮放物件；匯入驗證網址只用於當次操作，不會儲存。</p></div>
         </aside>
