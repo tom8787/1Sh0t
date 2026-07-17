@@ -385,11 +385,41 @@ function remainingLabel(seconds: number) {
   return `${hours} 小時 ${minutes} 分`;
 }
 
+function isWeaponItem(item: SceneItem) {
+  return ["rifle", "sniper", "sidearm", "melee"].includes(item.type);
+}
+
+function arrangeWeaponItems(sceneItems: SceneItem[]) {
+  const weaponItems = sceneItems.filter(isWeaponItem);
+  if (!weaponItems.length) return sceneItems;
+
+  const count = weaponItems.length;
+  const columns = count <= 20 ? 4 : count <= 42 ? 6 : Math.min(20, Math.max(8, Math.ceil(count / 10)));
+  const rows = Math.ceil(count / columns);
+  const left = 28;
+  const top = 98;
+  const cellW = (W - left * 2) / columns;
+  const cellH = (H - top - 26) / Math.max(rows, 1);
+  const arranged = new Map(weaponItems.map((item, index) => [item.uid, {
+    ...item,
+    x: left + (index % columns) * cellW + 5,
+    y: top + Math.floor(index / columns) * cellH + 3,
+    w: Math.max(38, cellW - 10),
+    h: Math.max(22, Math.min(82, cellH - 6)),
+    rotation: 0,
+  }]));
+
+  return sceneItems.map((item) => arranged.get(item.uid) || item);
+}
+
 function savedScene(): SceneItem[] {
   if (typeof window === "undefined") return [];
   try {
     const saved = JSON.parse(localStorage.getItem("loadout-lab-scene") || "[]");
-    return Array.isArray(saved) ? saved : [];
+    if (!Array.isArray(saved)) return [];
+    const weaponItems = (saved as SceneItem[]).filter(isWeaponItem);
+    const hasClippedItems = weaponItems.some((item) => item.x < 0 || item.y < 86 || item.x + item.w > W || item.y + item.h > H);
+    return weaponItems.length > 42 && hasClippedItems ? arrangeWeaponItems(saved as SceneItem[]) : saved;
   } catch {
     return [];
   }
@@ -626,6 +656,12 @@ export default function Home() {
     setSelected(clone.uid);
   };
 
+  const arrangeCollection = () => {
+    setItems((previous) => arrangeWeaponItems(previous));
+    setSelected(null);
+    flash("所有造型已自動排列在畫布內");
+  };
+
   const openLibrary = () => {
     setLibraryOpen(true);
     void loadCatalog().catch(() => undefined);
@@ -771,22 +807,18 @@ export default function Home() {
       );
       if (!matches.length) throw new Error(onlyEffects ? "沒有找到尚未加入的特效槍皮，可取消「僅匯入特效槍皮」再試一次。" : "沒有找到尚未加入的造型。");
 
-      const columns = matches.length <= 20 ? 4 : matches.length <= 42 ? 6 : 8;
-      const rows = Math.ceil(matches.length / columns);
-      const cellW = (W - 76) / columns;
-      const cellH = Math.max(62, (H - 166) / Math.max(rows, 1));
       uidSequence.current += matches.length;
       const firstImportedSequence = uidSequence.current - matches.length + 1;
       const imported: SceneItem[] = matches.map((asset, index) => ({
         ...asset,
         uid: `riot-${asset.id}-${firstImportedSequence + index}`,
-        x: 38 + (index % columns) * cellW,
-        y: 104 + Math.floor(index / columns) * cellH,
-        w: cellW - 16,
-        h: Math.min(92, cellH - 8),
+        x: 0,
+        y: 0,
+        w: 100,
+        h: 60,
         rotation: 0,
       }));
-      setItems((previous) => [...previous, ...imported]);
+      setItems((previous) => arrangeWeaponItems([...previous, ...imported]));
       setSelected(imported[0]?.uid || null);
       setAuthUrl("");
       setImportStatus(`完成：已匯入 ${imported.length} 個造型。`);
@@ -1102,6 +1134,7 @@ export default function Home() {
             <div><span className="eyebrow">COMPOSE</span><h1>收藏展示畫布 <small>{items.length} 個物件</small></h1></div>
             <div className="canvas-tools">
               <button title="清空整張畫布" onClick={() => { setItems([]); setSelected(null); flash("畫布已清空"); }}>重設</button>
+              <button title="把所有槍枝與刀具重新排入畫布" disabled={!items.some(isWeaponItem)} onClick={arrangeCollection}>自動排列</button>
               <button title="複製選取物件" disabled={!current} onClick={duplicateCurrent}>複製</button>
               <button title="刪除選取物件" disabled={!current} onClick={deleteCurrent}>刪除</button>
             </div>
