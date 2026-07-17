@@ -615,6 +615,16 @@ export default function Home() {
     localStorage.setItem("loadout-lab-wallet", JSON.stringify({ ...nextWallet, updatedAt }));
   }, []);
 
+  const syncWalletFromStorage = useCallback(() => {
+    const saved = savedWallet();
+    if (!saved) return;
+    setWallet({ vp: saved.vp, rp: saved.rp, kc: saved.kc });
+    setVp(String(saved.vp));
+    setRp(String(saved.rp));
+    setKc(String(saved.kc));
+    setLastUpdated(saved.updatedAt || 0);
+  }, []);
+
   const loadCatalog = useCallback(async () => {
     if (catalogRef.current.length) return catalogRef.current;
     setCatalogLoading(true);
@@ -686,10 +696,28 @@ export default function Home() {
   }, [layoutMode, canvasHeight]);
 
   useEffect(() => {
-    const syncPage = () => setActivePage(window.location.hash === "#/tools" ? "tools" : "editor");
+    const syncPage = () => {
+      const nextPage = window.location.hash === "#/tools" ? "tools" : "editor";
+      setActivePage(nextPage);
+      if (nextPage === "editor") syncWalletFromStorage();
+    };
+    const syncStoredWallet = (event: StorageEvent) => {
+      if (event.key === "loadout-lab-wallet") syncWalletFromStorage();
+    };
+    const syncVisibleWallet = () => {
+      if (document.visibilityState === "visible") syncWalletFromStorage();
+    };
     window.addEventListener("hashchange", syncPage);
-    return () => window.removeEventListener("hashchange", syncPage);
-  }, []);
+    window.addEventListener("storage", syncStoredWallet);
+    window.addEventListener("focus", syncWalletFromStorage);
+    document.addEventListener("visibilitychange", syncVisibleWallet);
+    return () => {
+      window.removeEventListener("hashchange", syncPage);
+      window.removeEventListener("storage", syncStoredWallet);
+      window.removeEventListener("focus", syncWalletFromStorage);
+      document.removeEventListener("visibilitychange", syncVisibleWallet);
+    };
+  }, [syncWalletFromStorage]);
 
   useEffect(() => {
     if (!toolsLoaded || storeRemaining <= 0) return;
@@ -1378,7 +1406,10 @@ export default function Home() {
         </section> : <section className="tools-dashboard">
           <div className="tools-dashboard-head">
             <div className="utility-account"><div><span>已連結帳號</span><strong>{accountName}</strong></div><small>{lastUpdated ? `更新於 ${new Date(lastUpdated).toLocaleTimeString("zh-TW", { hour: "2-digit", minute: "2-digit" })}` : "剛剛更新"}</small></div>
-            <button className="tools-refresh" onClick={() => { setToolsLoaded(false); setToolsStatus(""); setAuthUrl(""); }}>重新驗證更新</button>
+            <div className="tools-dashboard-actions">
+              <button className="tools-apply-wallet" disabled={!lastUpdated} onClick={() => { applyWalletBalance(wallet); window.location.hash = ""; flash(`已套用 VP ${wallet.vp} / RP ${wallet.rp} / KC ${wallet.kc}`); }}>套用到製圖畫布</button>
+              <button className="tools-refresh" onClick={() => { setToolsLoaded(false); setToolsStatus(""); setAuthUrl(""); }}>重新驗證更新</button>
+            </div>
           </div>
           {toolsStatus && <div className={`import-status ${toolsStatus.startsWith("完成") ? "success" : ""}`}>{toolsStatus}</div>}
           <div className="utility-tabs utility-tabs-three"><button className={toolsTab === "overview" ? "active" : ""} onClick={() => setToolsTab("overview")}>帳號總覽</button><button className={toolsTab === "store" ? "active" : ""} onClick={() => setToolsTab("store")}>每日商城</button><button className={toolsTab === "stats" ? "active" : ""} onClick={() => setToolsTab("stats")}>段位與戰績</button></div>
@@ -1463,7 +1494,7 @@ export default function Home() {
 
         <aside className="inspector-panel panel">
           <div className="panel-head"><div><span className="eyebrow">DETAILS</span><h2>編輯設定</h2></div>{current && <span className="selection-badge">已選取 {selectedIds.length} 個</span>}</div>
-          <div className="control-section"><h3>帳號點數</h3><div className="three-fields"><label>特務幣 VP<input value={vp} inputMode="numeric" onChange={(event) => setVp(event.target.value)} /></label><label>輻能點 RP<input value={rp} inputMode="numeric" onChange={(event) => setRp(event.target.value)} /></label><label>王國幣 KC<input value={kc} inputMode="numeric" onChange={(event) => setKc(event.target.value)} /></label></div><div className="account-sync-row"><span>{lastUpdated ? `上次同步 ${new Date(lastUpdated).toLocaleString("zh-TW", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}` : "尚未同步 Riot 帳號"}</span><a href="#/tools">同步帳號點數 →</a></div></div>
+          <div className="control-section"><h3>帳號點數</h3><div className="three-fields"><label>特務幣 VP<input value={vp} inputMode="numeric" onChange={(event) => setVp(event.target.value)} /></label><label>輻能點 RP<input value={rp} inputMode="numeric" onChange={(event) => setRp(event.target.value)} /></label><label>王國幣 KC<input value={kc} inputMode="numeric" onChange={(event) => setKc(event.target.value)} /></label></div><div className="account-sync-row"><span>{lastUpdated ? `上次同步 ${new Date(lastUpdated).toLocaleString("zh-TW", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}` : "尚未同步 Riot 帳號"}</span><a href="#/tools" onClick={() => { setToolsLoaded(false); setToolsStatus(""); setAuthUrl(""); }}>同步帳號點數 →</a></div></div>
           <div className="control-section"><h3>加入文字</h3><div className="inline-add"><input value={newText} placeholder="輸入自訂文字" onChange={(event) => setNewText(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") addText(); }} /><button onClick={() => addText()}>加入</button></div></div>
           <div className="control-section"><h3>畫布背景</h3><label className="dropzone"><span>▧</span><strong>更換背景圖片</strong><small>JPG、PNG 或 WEBP</small><input type="file" accept="image/*" onChange={loadBackground} /></label>{bgUrl && <button className="text-btn" onClick={() => { bgImageRef.current = undefined; setBgUrl(""); }}>移除自訂背景</button>}</div>
           <div className="control-section selection-section">
