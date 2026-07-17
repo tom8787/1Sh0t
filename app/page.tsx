@@ -298,6 +298,7 @@ function drawScene(
   selectedIds: string[],
   vp: string,
   rp: string,
+  kc: string,
   height: number,
   bgImage?: HTMLImageElement,
   images?: Map<string, HTMLImageElement>,
@@ -344,7 +345,7 @@ function drawScene(
   ctx.textAlign = "right";
   ctx.fillStyle = "#d7e8ef";
   ctx.font = "700 18px Arial, sans-serif";
-  ctx.fillText(`VP  ${vp || "0"}     RP  ${rp || "0"}`, W - 40, 52);
+  ctx.fillText(`VP  ${vp || "0"}     RP  ${rp || "0"}     KC  ${kc || "0"}`, W - 40, 52);
   ctx.textAlign = "left";
   ctx.shadowBlur = 0;
 
@@ -524,6 +525,16 @@ function savedCanvasHeight() {
   return Math.max(H, Number(localStorage.getItem("loadout-lab-canvas-height") || H));
 }
 
+function savedWallet() {
+  if (typeof window === "undefined") return null;
+  try {
+    const saved = JSON.parse(localStorage.getItem("loadout-lab-wallet") || "null") as (WalletBalance & { updatedAt?: number }) | null;
+    return saved && [saved.vp, saved.rp, saved.kc].every(Number.isFinite) ? saved : null;
+  } catch {
+    return null;
+  }
+}
+
 export default function Home() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const bgImageRef = useRef<HTMLImageElement | undefined>(undefined);
@@ -561,8 +572,9 @@ export default function Home() {
   const [catalogLoading, setCatalogLoading] = useState(true);
   const [catalogError, setCatalogError] = useState("");
   const [visibleCount, setVisibleCount] = useState(80);
-  const [vp, setVp] = useState("475");
-  const [rp, setRp] = useState("90");
+  const [vp, setVp] = useState(() => String(savedWallet()?.vp ?? 475));
+  const [rp, setRp] = useState(() => String(savedWallet()?.rp ?? 90));
+  const [kc, setKc] = useState(() => String(savedWallet()?.kc ?? 0));
   const [bgUrl, setBgUrl] = useState("");
   const [newText, setNewText] = useState("");
   const [toast, setToast] = useState("");
@@ -580,8 +592,8 @@ export default function Home() {
   const [toolsLoaded, setToolsLoaded] = useState(false);
   const [toolsStatus, setToolsStatus] = useState("");
   const [accountName, setAccountName] = useState("我的 Riot 帳號");
-  const [wallet, setWallet] = useState<WalletBalance>({ vp: 0, rp: 0, kc: 0 });
-  const [lastUpdated, setLastUpdated] = useState(0);
+  const [wallet, setWallet] = useState<WalletBalance>(() => savedWallet() || { vp: 0, rp: 0, kc: 0 });
+  const [lastUpdated, setLastUpdated] = useState(() => savedWallet()?.updatedAt || 0);
   const [storeOffers, setStoreOffers] = useState<StoreOffer[]>([]);
   const [storeRemaining, setStoreRemaining] = useState(0);
   const [storeError, setStoreError] = useState("");
@@ -591,6 +603,16 @@ export default function Home() {
   const flash = useCallback((message: string) => {
     setToast(message);
     window.setTimeout(() => setToast(""), 2400);
+  }, []);
+
+  const applyWalletBalance = useCallback((nextWallet: WalletBalance) => {
+    const updatedAt = Date.now();
+    setWallet(nextWallet);
+    setVp(String(nextWallet.vp));
+    setRp(String(nextWallet.rp));
+    setKc(String(nextWallet.kc));
+    setLastUpdated(updatedAt);
+    localStorage.setItem("loadout-lab-wallet", JSON.stringify({ ...nextWallet, updatedAt }));
   }, []);
 
   const loadCatalog = useCallback(async () => {
@@ -740,8 +762,8 @@ export default function Home() {
 
   useEffect(() => {
     const ctx = canvasRef.current?.getContext("2d");
-    if (ctx) drawScene(ctx, visibleItems, selectedIds, vp, rp, canvasHeight, bgImageRef.current, imageRefs.current, selectionRect);
-  }, [visibleItems, selectedIds, vp, rp, bgUrl, imageRevision, canvasHeight, selectionRect]);
+    if (ctx) drawScene(ctx, visibleItems, selectedIds, vp, rp, kc, canvasHeight, bgImageRef.current, imageRefs.current, selectionRect);
+  }, [visibleItems, selectedIds, vp, rp, kc, bgUrl, imageRevision, canvasHeight, selectionRect]);
 
   const addAsset = (asset: LibraryAsset) => {
     const same = items.filter((item) => item.type === asset.type).length;
@@ -975,7 +997,7 @@ export default function Home() {
     const ctx = canvas.getContext("2d");
     if (!ctx) throw new Error("無法建立匯出畫布");
     const exportItems = layoutMode === "pages" ? items.filter((item) => (item.layoutPage || 0) === page) : items;
-    drawScene(ctx, exportItems, [], vp, rp, canvas.height, bgImageRef.current, imageRefs.current);
+    drawScene(ctx, exportItems, [], vp, rp, kc, canvas.height, bgImageRef.current, imageRefs.current);
     return canvas;
   };
 
@@ -1035,19 +1057,31 @@ export default function Home() {
       setImportStatus("正在讀取造型收藏…");
       const versionResponse = await fetch("https://valorant-api.com/v1/version");
       const versionJson = await versionResponse.json();
-      const inventoryResponse = await fetch(`https://pd.${region}.a.pvp.net/store/v1/entitlements/${encodeURIComponent(puuid)}`, {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          "X-Riot-Entitlements-JWT": entitlementToken,
-          "X-Riot-ClientVersion": versionJson.data.riotClientVersion,
-          "X-Riot-ClientPlatform": CLIENT_PLATFORM,
-        },
-      });
+      const riotHeaders = {
+        Authorization: `Bearer ${accessToken}`,
+        "X-Riot-Entitlements-JWT": entitlementToken,
+        "X-Riot-ClientVersion": versionJson.data.riotClientVersion,
+        "X-Riot-ClientPlatform": CLIENT_PLATFORM,
+      };
+      const pdHost = `https://pd.${region}.a.pvp.net`;
+      const [inventoryResponse, importWalletResponse] = await Promise.all([
+        fetch(`${pdHost}/store/v1/entitlements/${encodeURIComponent(puuid)}`, { headers: riotHeaders }),
+        fetch(`${pdHost}/store/v1/wallet/${encodeURIComponent(puuid)}`, { headers: riotHeaders }).catch(() => new Response(null, { status: 503 })),
+      ]);
       if (!inventoryResponse.ok) {
         if ([401, 403].includes(inventoryResponse.status)) throw new Error("Riot 驗證失敗，網址可能已過期，請重新登入。");
         throw new Error("無法讀取收藏。請確認分區是否正確，再重新嘗試。");
       }
       const inventory = await inventoryResponse.json();
+      if (importWalletResponse.ok) {
+        const walletJson = await importWalletResponse.json() as { Balances?: Record<string, number> };
+        const balances = walletJson.Balances || {};
+        applyWalletBalance({
+          vp: Number(balances[CURRENCY_IDS.vp] || 0),
+          rp: Number(balances[CURRENCY_IDS.rp] || 0),
+          kc: Number(balances[CURRENCY_IDS.kc] || 0),
+        });
+      }
       const groups = inventory.EntitlementsByTypes || inventory.entitlementsByTypes || [];
       const ownedIds = new Set<string>();
       groups.forEach((group: { Entitlements?: { ItemID?: string; itemId?: string }[]; entitlements?: { ItemID?: string; itemId?: string }[] }) => {
@@ -1201,9 +1235,7 @@ export default function Home() {
           rp: Number(balances[CURRENCY_IDS.rp] || 0),
           kc: Number(balances[CURRENCY_IDS.kc] || 0),
         };
-        setWallet(nextWallet);
-        setVp(String(nextWallet.vp));
-        setRp(String(nextWallet.rp));
+        applyWalletBalance(nextWallet);
       } else {
         setWallet({ vp: 0, rp: 0, kc: 0 });
       }
@@ -1288,7 +1320,6 @@ export default function Home() {
       if (!historyResponse.ok) missing.push("近期戰績");
       setToolsLoaded(true);
       setToolsTab("overview");
-      setLastUpdated(Date.now());
       setAuthUrl("");
       setToolsStatus(missing.length ? `已完成，但目前無法讀取：${missing.join("、")}。` : "完成：帳號資料已更新。");
     } catch (error) {
@@ -1432,7 +1463,7 @@ export default function Home() {
 
         <aside className="inspector-panel panel">
           <div className="panel-head"><div><span className="eyebrow">DETAILS</span><h2>編輯設定</h2></div>{current && <span className="selection-badge">已選取 {selectedIds.length} 個</span>}</div>
-          <div className="control-section"><h3>帳號資訊</h3><div className="two-fields"><label>特務幣 VP<input value={vp} inputMode="numeric" onChange={(event) => setVp(event.target.value)} /></label><label>輻能點 RP<input value={rp} inputMode="numeric" onChange={(event) => setRp(event.target.value)} /></label></div></div>
+          <div className="control-section"><h3>帳號點數</h3><div className="three-fields"><label>特務幣 VP<input value={vp} inputMode="numeric" onChange={(event) => setVp(event.target.value)} /></label><label>輻能點 RP<input value={rp} inputMode="numeric" onChange={(event) => setRp(event.target.value)} /></label><label>王國幣 KC<input value={kc} inputMode="numeric" onChange={(event) => setKc(event.target.value)} /></label></div><div className="account-sync-row"><span>{lastUpdated ? `上次同步 ${new Date(lastUpdated).toLocaleString("zh-TW", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}` : "尚未同步 Riot 帳號"}</span><a href="#/tools">同步帳號點數 →</a></div></div>
           <div className="control-section"><h3>加入文字</h3><div className="inline-add"><input value={newText} placeholder="輸入自訂文字" onChange={(event) => setNewText(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") addText(); }} /><button onClick={() => addText()}>加入</button></div></div>
           <div className="control-section"><h3>畫布背景</h3><label className="dropzone"><span>▧</span><strong>更換背景圖片</strong><small>JPG、PNG 或 WEBP</small><input type="file" accept="image/*" onChange={loadBackground} /></label>{bgUrl && <button className="text-btn" onClick={() => { bgImageRef.current = undefined; setBgUrl(""); }}>移除自訂背景</button>}</div>
           <div className="control-section selection-section">
