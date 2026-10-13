@@ -11,6 +11,8 @@ import {
   useRef,
   useState,
 } from "react";
+import { AlignCenterHorizontal, ArrowDown, ArrowUp, ArrowsClockwise, ArrowsOutSimple, Check, Copy, DownloadSimple, FolderSimple, Image as ImageIcon, MagnifyingGlass, Minus, Plus, SlidersHorizontal, TextT, Trash, UploadSimple, Wrench, X } from "@phosphor-icons/react";
+import { BRAND_BACKGROUND_URL, BRAND_LOGO_URL, drawBrandBackground, readBrandSettings, type BrandSettings } from "./brand-canvas";
 
 type AssetType = "rifle" | "sniper" | "sidearm" | "melee" | "bundle" | "card" | "charm" | "image" | "text";
 type CatalogCategory = "all" | "weapons" | "bundle" | "card" | "charm";
@@ -229,64 +231,20 @@ function drawItem(ctx: CanvasRenderingContext2D, item: SceneItem, selected: bool
     } else {
       drawContainedImage(ctx, image, item.w, item.h);
     }
-  } else if (item.type === "card" || item.type === "bundle" || item.type === "image") {
-    const gradient = ctx.createLinearGradient(0, 0, item.w, item.h);
-    gradient.addColorStop(0, item.colors[0]);
-    gradient.addColorStop(.5, item.colors[1]);
-    gradient.addColorStop(1, item.colors[2]);
-    ctx.fillStyle = gradient;
-    roundedRect(ctx, 0, 0, item.w, item.h, 14);
-    ctx.fill();
-  } else if (item.type === "charm") {
-    const gradient = ctx.createRadialGradient(item.w / 2, item.h / 2, 2, item.w / 2, item.h / 2, item.w / 2);
-    gradient.addColorStop(0, item.colors[0]);
-    gradient.addColorStop(.55, item.colors[1]);
-    gradient.addColorStop(1, item.colors[2]);
-    ctx.fillStyle = gradient;
-    ctx.beginPath();
-    ctx.arc(item.w / 2, item.h / 2, Math.min(item.w, item.h) * .35, 0, Math.PI * 2);
-    ctx.fill();
   } else {
-    const gradient = ctx.createLinearGradient(0, 0, item.w, item.h);
-    gradient.addColorStop(0, item.colors[0]);
-    gradient.addColorStop(.5, item.colors[1]);
-    gradient.addColorStop(1, item.colors[2]);
-    ctx.fillStyle = gradient;
-    ctx.shadowColor = item.colors[1];
-    ctx.shadowBlur = 15;
-    ctx.beginPath();
-    if (item.type === "melee") {
-      ctx.moveTo(item.w * .08, item.h * .88);
-      ctx.lineTo(item.w * .42, item.h * .55);
-      ctx.lineTo(item.w * .95, item.h * .05);
-      ctx.lineTo(item.w * .68, item.h * .68);
-      ctx.lineTo(item.w * .22, item.h * .96);
-    } else {
-      ctx.moveTo(item.w * .04, item.h * .36);
-      ctx.lineTo(item.w * .56, item.h * .24);
-      ctx.lineTo(item.w * .74, item.h * .38);
-      ctx.lineTo(item.w * .98, item.h * .34);
-      ctx.lineTo(item.w * .98, item.h * .5);
-      ctx.lineTo(item.w * .68, item.h * .57);
-      ctx.lineTo(item.w * .58, item.h * .78);
-      ctx.lineTo(item.w * .46, item.h * .78);
-      ctx.lineTo(item.w * .42, item.h * .56);
-      ctx.lineTo(item.w * .15, item.h * .6);
-      ctx.lineTo(item.w * .04, item.h * .48);
-    }
-    ctx.closePath();
-    ctx.fill();
-    ctx.shadowBlur = 0;
+    ctx.fillStyle = "#8f9aaa";
+    ctx.font = '14px Arial, "Noto Sans TC", sans-serif';
+    ctx.fillText("圖片載入中", 0, item.h / 2);
   }
 
   if (selected) {
-    ctx.strokeStyle = "#62f1df";
+    ctx.strokeStyle = "#3985ef";
     ctx.lineWidth = 3;
     ctx.setLineDash([8, 6]);
     roundedRect(ctx, -7, -7, item.w + 14, item.h + 14, 8);
     ctx.stroke();
     ctx.setLineDash([]);
-    ctx.fillStyle = "#62f1df";
+    ctx.fillStyle = "#3985ef";
     ctx.fillRect(item.w - 3, item.h - 3, 12, 12);
   }
   ctx.restore();
@@ -303,77 +261,51 @@ function drawScene(
   bgImage?: HTMLImageElement,
   images?: Map<string, HTMLImageElement>,
   selectionRect?: SelectionRect | null,
+  brandLogo?: HTMLImageElement,
+  brandSettings?: BrandSettings,
+  transparentBackground = false,
 ) {
   ctx.clearRect(0, 0, W, height);
   if (bgImage) {
     drawCoverImage(ctx, bgImage, W, height);
   } else {
-    const bg = ctx.createLinearGradient(0, 0, W, height);
-    bg.addColorStop(0, "#07131f");
-    bg.addColorStop(.52, "#0b3445");
-    bg.addColorStop(1, "#11182b");
-    ctx.fillStyle = bg;
-    ctx.fillRect(0, 0, W, height);
-    ctx.fillStyle = "rgba(76,242,218,.08)";
-    ctx.beginPath();
-    ctx.moveTo(0, height * .74);
-    ctx.lineTo(W, height * .21);
-    ctx.lineTo(W, height);
-    ctx.lineTo(0, height);
-    ctx.fill();
-    ctx.strokeStyle = "rgba(126,236,225,.11)";
-    for (let x = -200; x < W + 200; x += 90) {
-      ctx.beginPath();
-      ctx.moveTo(x, height);
-      ctx.lineTo(x + 460, 0);
-      ctx.stroke();
-    }
-    for (let y = 120; y < height; y += 84) {
-      ctx.beginPath();
-      ctx.moveTo(0, y);
-      ctx.lineTo(W, y);
-      ctx.stroke();
-    }
+    // A missing/transparent background must remain transparent in the exported PNG.
   }
-  if (!bgImage) {
-    ctx.fillStyle = "rgba(6,13,23,.86)";
-    ctx.fillRect(0, 0, W, 86);
-  } else {
+  if (brandSettings) drawBrandBackground(ctx, W, height, H, brandLogo, brandSettings);
+  if (brandSettings?.showMetadata) {
     ctx.shadowColor = "rgba(0,0,0,.82)";
     ctx.shadowBlur = 10;
-  }
-  ctx.textAlign = "right";
-  ctx.fillStyle = "#d7e8ef";
-  ctx.font = "700 18px Arial, sans-serif";
-  ctx.fillText(`VP  ${vp || "0"}     RP  ${rp || "0"}     KC  ${kc || "0"}`, W - 40, 52);
-  ctx.textAlign = "left";
-  ctx.shadowBlur = 0;
+    ctx.textAlign = "right";
+    ctx.fillStyle = transparentBackground ? "#53647a" : "#d7e8ef";
+    ctx.font = "700 18px Arial, sans-serif";
+    ctx.fillText(`VP  ${vp || "0"}     RP  ${rp || "0"}     KC  ${kc || "0"}`, W - 40, 52);
+    ctx.textAlign = "left";
+    ctx.shadowBlur = 0;
 
-  const weaponGroups = new Map<string, { y: number; count: number; minHeight: number }>();
-  items.filter(isWeaponItem).forEach((item) => {
-    const current = weaponGroups.get(item.label);
-    weaponGroups.set(item.label, {
-      y: Math.min(current?.y ?? item.y, item.y),
-      count: (current?.count || 0) + 1,
-      minHeight: Math.min(current?.minHeight ?? item.h, item.h),
+    const weaponGroups = new Map<string, { y: number; count: number; minHeight: number }>();
+    items.filter(isWeaponItem).forEach((item) => {
+      const current = weaponGroups.get(item.label);
+      weaponGroups.set(item.label, {
+        y: Math.min(current?.y ?? item.y, item.y),
+        count: (current?.count || 0) + 1,
+        minHeight: Math.min(current?.minHeight ?? item.h, item.h),
+      });
     });
-  });
-  weaponGroups.forEach((group, label) => {
-    const fontSize = Math.max(7, Math.min(12, group.minHeight * .22));
-    const labelY = Math.max(96, group.y - Math.max(5, fontSize + 4));
-    ctx.fillStyle = "rgba(5,14,20,.76)";
-    ctx.fillRect(26, labelY - fontSize - 4, W - 52, fontSize + 8);
-    ctx.fillStyle = "#6de9d8";
-    ctx.font = `800 ${fontSize}px Arial, "Noto Sans TC", sans-serif`;
-    ctx.fillText(`${label} · ${group.count} 個造型`, 34, labelY);
-  });
+    weaponGroups.forEach((group, label) => {
+      const fontSize = Math.max(7, Math.min(12, group.minHeight * .22));
+      const labelY = Math.max(22, group.y - Math.max(5, fontSize + 4));
+      ctx.fillStyle = transparentBackground ? "#64748b" : "#c5cfdd";
+      ctx.font = `800 ${fontSize}px Arial, "Noto Sans TC", sans-serif`;
+      ctx.fillText(`${label} · ${group.count} 個造型`, 34, labelY);
+    });
+  }
 
   const selectedSet = new Set(selectedIds);
   items.forEach((item) => drawItem(ctx, item, selectedSet.has(item.uid), images?.get(item.uid)));
   if (selectionRect) {
     ctx.save();
-    ctx.fillStyle = "rgba(93,228,209,.12)";
-    ctx.strokeStyle = "#62f1df";
+    ctx.fillStyle = "rgba(57,133,239,.12)";
+    ctx.strokeStyle = "#3985ef";
     ctx.lineWidth = 2;
     ctx.setLineDash([7, 5]);
     ctx.fillRect(selectionRect.x, selectionRect.y, selectionRect.w, selectionRect.h);
@@ -537,7 +469,12 @@ function savedWallet() {
 
 export default function Home() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const libraryScrollRef = useRef<HTMLDivElement>(null);
   const bgImageRef = useRef<HTMLImageElement | undefined>(undefined);
+  const brandLogoRef = useRef<HTMLImageElement | undefined>(undefined);
+  const [brandSettings, setBrandSettings] = useState(readBrandSettings);
+  const [brandError, setBrandError] = useState("");
+  const [libraryTab, setLibraryTab] = useState<"assets" | "background">("assets");
   const imageRefs = useRef(new Map<string, HTMLImageElement>());
   const loadingImages = useRef(new Set<string>());
   const catalogRef = useRef<LibraryAsset[]>([]);
@@ -575,9 +512,10 @@ export default function Home() {
   const [vp, setVp] = useState(() => String(savedWallet()?.vp ?? 475));
   const [rp, setRp] = useState(() => String(savedWallet()?.rp ?? 90));
   const [kc, setKc] = useState(() => String(savedWallet()?.kc ?? 0));
-  const [bgUrl, setBgUrl] = useState("");
+  const [bgUrl, setBgUrl] = useState(BRAND_BACKGROUND_URL);
   const [newText, setNewText] = useState("");
   const [toast, setToast] = useState("");
+  const [lastExport, setLastExport] = useState<{ url: string; filename: string; format: "PNG" | "ZIP"; items: SceneItem[]; settings: BrandSettings; background: string; mode: LayoutMode; page: number } | null>(null);
   const [imageRevision, setImageRevision] = useState(0);
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
@@ -648,7 +586,7 @@ export default function Home() {
             type: weaponType(weapon.category),
             label: weapon.displayName,
             colors: colorsFromId(skin.uuid),
-            imageUrl: skin.levels?.find((level) => level.displayIcon)?.displayIcon || skin.chromas?.find((chroma) => chroma.fullRender)?.fullRender || skin.displayIcon || undefined,
+            imageUrl: skin.chromas?.find((chroma) => chroma.fullRender)?.fullRender || skin.levels?.find((level) => level.displayIcon)?.displayIcon || skin.displayIcon || undefined,
             levelIds: skin.levels?.map((level) => level.uuid.toLowerCase()) || [],
             isEffect: (skin.levels?.length || 0) > 1,
           })),
@@ -686,6 +624,10 @@ export default function Home() {
   }, [loadCatalog]);
 
   useEffect(() => {
+    if (libraryScrollRef.current) libraryScrollRef.current.scrollTop = 0;
+  }, [search, category]);
+
+  useEffect(() => {
     const persistentItems = items.filter((item) => !item.imageUrl?.startsWith("blob:"));
     localStorage.setItem("loadout-lab-scene", JSON.stringify(persistentItems));
   }, [items]);
@@ -694,6 +636,43 @@ export default function Home() {
     localStorage.setItem("loadout-lab-layout-mode", layoutMode);
     localStorage.setItem("loadout-lab-canvas-height", String(canvasHeight));
   }, [layoutMode, canvasHeight]);
+
+  useEffect(() => {
+    localStorage.setItem("1shot-brand-settings", JSON.stringify(brandSettings));
+  }, [brandSettings]);
+
+  useEffect(() => () => {
+    if (lastExport?.url.startsWith("blob:")) URL.revokeObjectURL(lastExport.url);
+  }, [lastExport]);
+
+  useEffect(() => {
+    let active = true;
+    const image = new Image();
+    image.onload = () => {
+      if (!active) return;
+      brandLogoRef.current = image;
+      setBrandError("");
+      setImageRevision((value) => value + 1);
+    };
+    image.onerror = () => { if (active) setBrandError("Logo 載入失敗，請重新整理頁面。"); };
+    image.src = BRAND_LOGO_URL;
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    bgImageRef.current = undefined;
+    const image = new Image();
+    image.onload = () => {
+      if (!active) return;
+      bgImageRef.current = image;
+      setImageRevision((value) => value + 1);
+      if (bgUrl.startsWith("blob:")) flash("背景已更新");
+    };
+    image.onerror = () => { if (active) flash("背景圖片無法讀取，請換一張圖片或恢復透明背景。"); };
+    image.src = bgUrl;
+    return () => { active = false; if (bgUrl.startsWith("blob:")) URL.revokeObjectURL(bgUrl); };
+  }, [bgUrl, flash]);
 
   useEffect(() => {
     const syncPage = () => {
@@ -790,8 +769,8 @@ export default function Home() {
 
   useEffect(() => {
     const ctx = canvasRef.current?.getContext("2d");
-    if (ctx) drawScene(ctx, visibleItems, selectedIds, vp, rp, kc, canvasHeight, bgImageRef.current, imageRefs.current, selectionRect);
-  }, [visibleItems, selectedIds, vp, rp, kc, bgUrl, imageRevision, canvasHeight, selectionRect]);
+    if (ctx) drawScene(ctx, visibleItems, selectedIds, vp, rp, kc, canvasHeight, bgImageRef.current, imageRefs.current, selectionRect, brandLogoRef.current, brandSettings, bgUrl === BRAND_BACKGROUND_URL);
+  }, [visibleItems, selectedIds, vp, rp, kc, bgUrl, imageRevision, canvasHeight, selectionRect, brandSettings, activePage]);
 
   const addAsset = (asset: LibraryAsset) => {
     const same = items.filter((item) => item.type === asset.type).length;
@@ -819,7 +798,7 @@ export default function Home() {
     uidSequence.current += 1;
     const item: SceneItem = {
       id: `text-${uidSequence.current}`, uid: `text-${uidSequence.current}`, name: value, text: value, type: "text", label: "自訂文字",
-      colors: ["#ffffff", "#ffffff", "#ffffff"], textColor: "#ffffff", fontSize: 42,
+      colors: ["#ffffff", "#ffffff", "#ffffff"], textColor: "#243044", fontSize: 42,
       x: 430, y: 600, w: Math.min(520, Math.max(180, value.length * 48)), h: 64, rotation: 0, layoutPage: currentPage,
     };
     setItems((previous) => [...previous, item]);
@@ -905,7 +884,8 @@ export default function Home() {
   };
 
   const openLibrary = () => {
-    setLibraryOpen(true);
+    setLibraryTab("assets");
+    if (window.innerWidth <= 800) setLibraryOpen(true);
     void loadCatalog().catch(() => undefined);
   };
 
@@ -987,13 +967,8 @@ export default function Home() {
     const file = event.target.files?.[0];
     if (!file) return;
     const url = URL.createObjectURL(file);
-    const image = new Image();
-    image.onload = () => {
-      bgImageRef.current = image;
-      setBgUrl(url);
-      flash("背景已更新");
-    };
-    image.src = url;
+    setBgUrl(url);
+    event.target.value = "";
   };
 
   const loadCustom = (event: ChangeEvent<HTMLInputElement>) => {
@@ -1019,13 +994,15 @@ export default function Home() {
   };
 
   const renderExportCanvas = (page = currentPage) => {
+    if ((brandSettings.enabled && !brandLogoRef.current) || !bgImageRef.current || loadingImages.current.size) throw new Error("圖片仍在載入");
     const canvas = document.createElement("canvas");
     canvas.width = W;
     canvas.height = layoutMode === "long" ? canvasHeight : H;
     const ctx = canvas.getContext("2d");
     if (!ctx) throw new Error("無法建立匯出畫布");
     const exportItems = layoutMode === "pages" ? items.filter((item) => (item.layoutPage || 0) === page) : items;
-    drawScene(ctx, exportItems, [], vp, rp, kc, canvas.height, bgImageRef.current, imageRefs.current);
+    if (exportItems.some((item) => item.imageUrl && !imageRefs.current.has(item.uid))) throw new Error("素材圖片尚未載入完成");
+    drawScene(ctx, exportItems, [], vp, rp, kc, canvas.height, bgImageRef.current, imageRefs.current, null, brandLogoRef.current, brandSettings, bgUrl === BRAND_BACKGROUND_URL);
     return canvas;
   };
 
@@ -1033,8 +1010,9 @@ export default function Home() {
     try {
       const canvas = renderExportCanvas();
       const link = document.createElement("a");
-      link.download = `特戰收藏-${layoutMode === "pages" ? `第${currentPage + 1}頁-` : ""}${new Date().toISOString().slice(0, 10)}.png`;
+      link.download = `1Sh0t-收藏-${layoutMode === "pages" ? `第${currentPage + 1}頁-` : ""}${new Date().toISOString().slice(0, 10)}.png`;
       link.href = canvas.toDataURL("image/png");
+      setLastExport({ url: link.href, filename: link.download, format: "PNG", items, settings: brandSettings, background: bgUrl, mode: layoutMode, page: currentPage });
       link.click();
       flash(layoutMode === "pages" ? `第 ${currentPage + 1} 頁 PNG 已匯出` : "高畫質 PNG 已匯出");
     } catch {
@@ -1050,14 +1028,14 @@ export default function Home() {
       for (let page = 0; page < pageCount; page += 1) {
         const canvas = renderExportCanvas(page);
         const blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob((value) => value ? resolve(value) : reject(new Error("PNG 建立失敗")), "image/png"));
-        zip.file(`特戰收藏-第${page + 1}頁.png`, blob);
+        zip.file(`1Sh0t-收藏-第${page + 1}頁.png`, blob);
       }
       const archive = await zip.generateAsync({ type: "blob" });
       const link = document.createElement("a");
-      link.download = `特戰收藏-全部頁面-${new Date().toISOString().slice(0, 10)}.zip`;
+      link.download = `1Sh0t-收藏-全部頁面-${new Date().toISOString().slice(0, 10)}.zip`;
       link.href = URL.createObjectURL(archive);
+      setLastExport({ url: link.href, filename: link.download, format: "ZIP", items, settings: brandSettings, background: bgUrl, mode: layoutMode, page: currentPage });
       link.click();
-      window.setTimeout(() => URL.revokeObjectURL(link.href), 1000);
       flash(`已匯出 ${pageCount} 頁 ZIP`);
     } catch {
       flash("多頁匯出失敗，請稍後再試");
@@ -1365,17 +1343,35 @@ export default function Home() {
       {filtered.slice(0, limit).map((asset) => (
         <button className="asset-card" key={asset.id} onClick={() => addAsset(asset)}>
           <span className={`mini-asset ${asset.type}`}>{asset.imageUrl ? <img src={asset.imageUrl} alt="" loading="lazy" crossOrigin="anonymous" /> : <b />}</span>
-          <span><strong>{asset.name}</strong><small>{asset.label}{asset.isEffect ? " · 特效" : ""}</small></span><em>＋</em>
+          <span><strong>{asset.name}</strong><small>{asset.label}{asset.isEffect ? " · 特效" : ""}</small></span><Plus size={15} />
         </button>
       ))}
     </>
   );
 
+  const backgroundControls = <div className="background-settings">
+    <div className="settings-intro"><h2>畫布背景</h2><p>背景與 Logo 都會一起匯出。</p></div>
+    <button className={`background-preset ${bgUrl === BRAND_BACKGROUND_URL ? "active" : ""}`} onClick={() => { setBgUrl(BRAND_BACKGROUND_URL); flash("已套用透明背景"); }}>
+      <img src={BRAND_BACKGROUND_URL} alt="透明背景" /><span><strong>透明背景</strong><small>只輸出素材與 Logo</small></span>{bgUrl === BRAND_BACKGROUND_URL && <Check size={18} />}
+    </button>
+    <label className="dropzone"><UploadSimple size={25} /><strong>上傳背景圖片</strong><small>JPG、PNG 或 WEBP</small><input aria-label="上傳背景圖片" type="file" accept="image/*" onChange={loadBackground} /></label>
+    {bgUrl !== BRAND_BACKGROUND_URL && <button className="text-btn" onClick={() => setBgUrl(BRAND_BACKGROUND_URL)}>恢復透明背景</button>}
+    <div className="control-section brand-settings"><div className="setting-heading"><h3>品牌 Logo</h3><label className="check-row"><input aria-label="Logo 水印" type="checkbox" checked={brandSettings.enabled} onChange={(event) => setBrandSettings((settings) => ({ ...settings, enabled: event.target.checked }))} /><span>Logo 水印</span></label></div>
+      <div className="logo-preview"><img src={BRAND_LOGO_URL} alt="1Sh0t 紅色品牌 Logo" /></div>
+      <label className="range-label"><span>透明度 <b>{Math.round(brandSettings.opacity * 100)}%</b></span><input aria-label="Logo 透明度" type="range" min="0" max="100" disabled={!brandSettings.enabled} value={Math.round(brandSettings.opacity * 100)} onChange={(event) => setBrandSettings((settings) => ({ ...settings, opacity: Number(event.target.value) / 100 }))} /></label>
+      <label className="range-label"><span>大小 <b>{Math.round(brandSettings.scale * 100)}%</b></span><input aria-label="Logo 大小" type="range" min="30" max="100" disabled={!brandSettings.enabled} value={Math.round(brandSettings.scale * 100)} onChange={(event) => setBrandSettings((settings) => ({ ...settings, scale: Number(event.target.value) / 100 }))} /></label>
+      <p className="settings-note">Logo 疊在素材後方，透明度與大小都可調整。</p>{brandError && <p className="settings-error">{brandError}</p>}
+    </div>
+    <div className="control-section"><label className="check-row"><input type="checkbox" aria-label="輸出帳號點數與分類標籤" checked={brandSettings.showMetadata} onChange={(event) => setBrandSettings((settings) => ({ ...settings, showMetadata: event.target.checked }))} /><span>輸出帳號點數與分類標籤</span></label>{brandSettings.showMetadata && <><h3 className="metadata-heading">帳號點數</h3><div className="three-fields"><label>VP<input value={vp} inputMode="numeric" onChange={(event) => setVp(event.target.value)} /></label><label>RP<input value={rp} inputMode="numeric" onChange={(event) => setRp(event.target.value)} /></label><label>KC<input value={kc} inputMode="numeric" onChange={(event) => setKc(event.target.value)} /></label></div><div className="account-sync-row"><span>{lastUpdated ? "已同步 Riot 帳號" : "尚未同步 Riot 帳號"}</span><a href="#/tools">同步點數</a></div></>}</div>
+  </div>;
+
+  const currentExport = lastExport && lastExport.items === items && lastExport.settings === brandSettings && lastExport.background === bgUrl && lastExport.mode === layoutMode && lastExport.page === currentPage ? lastExport : null;
+
   if (activePage === "tools") return (
     <main className="tools-page-shell">
       <header className="tools-page-topbar">
         <a className="tools-back" href="#">← 返回製圖工具</a>
-        <div className="brand"><span className="brand-mark">SW</span><span>LOADOUT LAB</span><i>實用小工具</i></div>
+        <div className="brand"><span className="brand-wordmark">1Sh0t</span><i>實用小工具</i></div>
         <span className="tools-private"><b />本機讀取 · 不儲存憑證</span>
       </header>
 
@@ -1440,89 +1436,70 @@ export default function Home() {
   );
 
   return (
-    <main className="app-shell">
+    <main className="app-shell studio-shell">
       <header className="topbar">
-        <div className="brand"><span className="brand-mark">SW</span><span>LOADOUT LAB</span><i>特戰製圖工具</i></div>
+        <div className="brand"><span className="brand-wordmark">1Sh0t</span><i>收藏展示畫布</i></div>
         <div className="top-actions">
-          <span className="status-dot" /><span className="privacy-label">本機處理 · 不儲存 Riot 憑證</span>
-          <button className="ghost-btn" onClick={openLibrary}>＋ 素材庫</button>
-          <a className="tools-btn" href="#/tools" onClick={() => setToolsStatus("")}>實用小工具</a>
-          <button className="import-btn" onClick={openImport}>⇄ Riot 匯入</button>
-          <button className="export-btn" onClick={exportPng}>{layoutMode === "pages" ? "匯出本頁" : "匯出 PNG"}</button>
+          <a className="tools-btn" href="#/tools" onClick={() => setToolsStatus("")}><Wrench size={18} /> <span>實用工具</span></a>
+          <button className="ghost-btn" onClick={openLibrary}><FolderSimple size={18} /> <span>素材庫</span></button>
+          <button className="import-btn" onClick={openImport}><UploadSimple size={18} /> <span>Riot 匯入</span></button>
+          <button className="export-btn" onClick={exportPng}><DownloadSimple size={19} /> {layoutMode === "pages" ? "匯出本頁" : "匯出 PNG"}</button>
         </div>
       </header>
 
       <section className="workspace">
+        <aside className="studio-library" aria-label="素材與背景">
+          <div className="library-tabs" role="tablist" aria-label="素材與背景分頁"><button role="tab" aria-selected={libraryTab === "assets"} onClick={() => setLibraryTab("assets")}>素材庫</button><button role="tab" aria-selected={libraryTab === "background"} onClick={() => setLibraryTab("background")}>畫布背景</button></div>
+          {libraryTab === "assets" ? <div className="library-content"><label className="search"><MagnifyingGlass size={19} /><input aria-label="搜尋素材" placeholder="搜尋造型或武器…" value={search} onChange={(event) => setSearch(event.target.value)} /></label><label className="category-select"><span className="sr-only">素材類型</span><select aria-label="素材類型" value={category} onChange={(event) => { setCategory(event.target.value as CatalogCategory); setVisibleCount(80); }}>{categoryTabs.map((tab) => <option key={tab.key} value={tab.key}>{tab.key === "all" ? "全部類型" : tab.label}</option>)}</select></label><div className="library-count">{filtered.length.toLocaleString()} 個素材 <span>點擊加入畫布</span></div><div className="asset-grid" ref={libraryScrollRef}>{assetList(visibleCount)}{visibleCount < filtered.length && <button className="load-more" onClick={() => setVisibleCount((value) => value + 80)}>顯示更多</button>}</div></div> : backgroundControls}
+        </aside>
         <section className="stage-panel panel">
-          <div className="stage-head">
-            <div><span className="eyebrow">COMPOSE</span><h1>收藏展示畫布 <small>{items.length} 個物件</small></h1></div>
-            <div className="canvas-tools">
-              <button title="清空整張畫布" onClick={() => { setItems([]); setSelected(null); flash("畫布已清空"); }}>重設</button>
-              <button title="把所有槍枝與刀具重新排入畫布" disabled={!items.some(isWeaponItem)} onClick={arrangeCollection}>自動排列</button>
-              <button title="複製選取物件" disabled={!current} onClick={duplicateCurrent}>複製</button>
-              <button title="刪除選取物件" disabled={!current} onClick={deleteCurrent}>刪除</button>
-            </div>
-          </div>
-          <div className="quick-actions" aria-label="快速操作">
-            <button className="quick-primary" onClick={openLibrary}><span>01</span> 選擇造型</button>
-            <button onClick={openImport}><span>02</span> 匯入 Riot 收藏</button>
-            <label><span>03</span> 上傳背景<input type="file" accept="image/*" onChange={loadBackground} /></label>
-            <button onClick={() => addText("我的特戰收藏")}><span>＋</span> 加入文字</button>
-            <label><span>＋</span> 自訂圖片<input type="file" accept="image/*" onChange={loadCustom} /></label>
-          </div>
-          <div className="layout-bar">
+          <div className="editor-toolbar">
             <div className="layout-mode-switch"><span>排列模式</span><button className={layoutMode === "single" ? "active" : ""} onClick={() => changeLayoutMode("single")}>單張</button><button className={layoutMode === "long" ? "active" : ""} onClick={() => changeLayoutMode("long")}>長圖</button><button className={layoutMode === "pages" ? "active" : ""} onClick={() => changeLayoutMode("pages")}>多頁</button></div>
-            {layoutMode === "pages" && <div className="page-controls"><button disabled={currentPage === 0} onClick={() => { setCurrentPage((page) => Math.max(0, page - 1)); setSelected(null); }}>←</button><strong>{currentPage + 1} / {pageCount}</strong><button disabled={currentPage >= pageCount - 1} onClick={() => { setCurrentPage((page) => Math.min(pageCount - 1, page + 1)); setSelected(null); }}>→</button><button className="export-pages" onClick={() => void exportAllPages()}>全部頁面 ZIP</button></div>}
+            <div className="compose-actions"><button onClick={() => addText("我的特戰收藏")}><TextT size={20} /><span>加入文字</span></button><label><ImageIcon size={20} /><span>自訂圖片</span><input aria-label="上傳自訂圖片" type="file" accept="image/*" onChange={loadCustom} /></label><button className="background-shortcut" onClick={() => setLibraryTab("background")}><SlidersHorizontal size={19} /><span>背景</span></button></div>
+            <div className="canvas-tools"><button aria-label="自動排列" title="自動排列收藏" disabled={!items.some(isWeaponItem)} onClick={arrangeCollection}><ArrowsOutSimple size={19} /></button><button aria-label="重設畫布" title="清空畫布" disabled={!items.length} onClick={() => { setItems([]); setSelected(null); flash("畫布已清空"); }}><ArrowsClockwise size={19} /></button></div>
           </div>
-          <div className={`canvas-wrap ${layoutMode === "long" ? "long-canvas" : ""}`}>
-            <canvas ref={canvasRef} width={W} height={canvasHeight} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp} aria-label="可拖曳並可框選多個造型的特戰收藏畫布" />
-            {selectionBounds && selectedItems.some((item) => visibleItems.includes(item)) && <div className="floating-tools" style={{ left: `${Math.max(12, Math.min(88, ((selectionBounds.x + selectionBounds.right) / 2) / W * 100))}%`, top: `${Math.max(3, selectionBounds.y / canvasHeight * 100)}%` }}>
-              <span>{selectedIds.length} 個</span>
-              <button title="縮小" onClick={() => scaleSelection(.9)}>−</button>
-              <button title="放大" onClick={() => scaleSelection(1.1)}>＋</button>
-              {canOutline && <button className={selectedItems.every((item) => item.outlineEnabled) ? "active" : ""} title="切換外框" onClick={toggleSelectionOutline}>外框</button>}
-              {canOutline && selectedItems.some((item) => item.outlineEnabled) && <input type="color" aria-label="選取項目的外框顏色" value={current?.outlineColor || "#f3a3b4"} onChange={(event) => updateCurrent({ outlineColor: event.target.value })} />}
-              <button title="複製" onClick={duplicateCurrent}>複製</button>
-              <button title="水平對齊" onClick={alignSelection}>對齊</button>
-              <button title="移到最上層" onClick={bringSelectionToFront}>置頂</button>
-              <button className="danger" title="刪除" onClick={deleteCurrent}>刪除</button>
-            </div>}
-            {!items.length && !bgUrl && <div className="empty-hint"><span>開始製作</span><strong>先選一個造型，或匯入你的收藏</strong><small>接著上傳背景，再拖曳素材自由排版</small><div><button onClick={openLibrary}>開啟素材庫</button><button onClick={openImport}>匯入 Riot 收藏</button></div></div>}
-          </div>
-          <div className="stage-foot"><span><b /> 自動儲存在這個裝置</span><span>1200 × {canvasHeight} PX{layoutMode === "pages" ? ` · 第 ${currentPage + 1}/${pageCount} 頁` : ""}</span><span>空白處拖曳框選 · Shift 加選 · 整組移動</span></div>
-        </section>
-
-        <aside className="inspector-panel panel">
-          <div className="panel-head"><div><span className="eyebrow">DETAILS</span><h2>編輯設定</h2></div>{current && <span className="selection-badge">已選取 {selectedIds.length} 個</span>}</div>
-          <div className="control-section"><h3>帳號點數</h3><div className="three-fields"><label>特務幣 VP<input value={vp} inputMode="numeric" onChange={(event) => setVp(event.target.value)} /></label><label>輻能點 RP<input value={rp} inputMode="numeric" onChange={(event) => setRp(event.target.value)} /></label><label>王國幣 KC<input value={kc} inputMode="numeric" onChange={(event) => setKc(event.target.value)} /></label></div><div className="account-sync-row"><span>{lastUpdated ? `上次同步 ${new Date(lastUpdated).toLocaleString("zh-TW", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}` : "尚未同步 Riot 帳號"}</span><a href="#/tools" onClick={() => { setToolsLoaded(false); setToolsStatus(""); setAuthUrl(""); }}>同步帳號點數 →</a></div></div>
-          <div className="control-section"><h3>加入文字</h3><div className="inline-add"><input value={newText} placeholder="輸入自訂文字" onChange={(event) => setNewText(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") addText(); }} /><button onClick={() => addText()}>加入</button></div></div>
-          <div className="control-section"><h3>畫布背景</h3><label className="dropzone"><span>▧</span><strong>更換背景圖片</strong><small>JPG、PNG 或 WEBP</small><input type="file" accept="image/*" onChange={loadBackground} /></label>{bgUrl && <button className="text-btn" onClick={() => { bgImageRef.current = undefined; setBgUrl(""); }}>移除自訂背景</button>}</div>
+          {layoutMode === "pages" && <div className="page-controls"><button aria-label="上一頁" disabled={currentPage === 0} onClick={() => { setCurrentPage((page) => Math.max(0, page - 1)); setSelected(null); }}><ArrowUp size={16} /></button><strong>第 {currentPage + 1} / {pageCount} 頁</strong><button aria-label="下一頁" disabled={currentPage >= pageCount - 1} onClick={() => { setCurrentPage((page) => Math.min(pageCount - 1, page + 1)); setSelected(null); }}><ArrowDown size={16} /></button><button className="export-pages" onClick={() => void exportAllPages()}><DownloadSimple size={16} />全部頁面 ZIP</button></div>}
+          <div className="editor-stage">
+            <div className={`canvas-wrap ${layoutMode === "long" ? "long-canvas" : ""}`}>
+              <canvas ref={canvasRef} width={W} height={canvasHeight} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp} aria-label="可拖曳並可框選多個造型的特戰收藏畫布" />
+              {!items.length && <div className="empty-hint"><span>開始製作</span><strong>把你的收藏放上畫布</strong><small>選擇造型或匯入收藏，開始自由排版。</small><div><button onClick={openLibrary}><FolderSimple size={17} />選擇造型</button><button onClick={openImport}><UploadSimple size={17} />Riot 匯入</button></div></div>}
+            </div>
+            {current && <aside className="inspector-panel panel" aria-label="編輯選取項目">
+              <div className="panel-head"><h2>編輯設定 <small>{selectedIds.length > 1 ? `${selectedIds.length} 個項目` : ""}</small></h2><button className="close-btn" aria-label="關閉編輯設定" onClick={() => setSelected(null)}><X size={19} /></button></div>
           <div className="control-section selection-section">
-            <h3>選取項目</h3>
+
             {current ? <>
-              <div className="selected-name"><span style={{ background: current.colors[1] }} /><div><strong>{current.name}</strong><small>{current.label}</small></div></div>
+              <div className="selected-name">{current.imageUrl && <img src={current.imageUrl} alt="" />}<div><strong>{current.name}</strong><small>{current.label}</small></div></div>
+              {selectedIds.length === 1 && <div className="position-fields"><label>位置 X<input aria-label="物件位置 X" type="number" value={Math.round(current.x)} onChange={(event) => updateCurrent({ x: Math.max(0, Math.min(W - current.w, Number(event.target.value))) })} /></label><label>位置 Y<input aria-label="物件位置 Y" type="number" value={Math.round(current.y)} onChange={(event) => updateCurrent({ y: Math.max(0, Math.min(canvasHeight - current.h, Number(event.target.value))) })} /></label></div>}
               {current.type === "text" && <><label className="field-label">文字內容<input value={current.text || ""} onChange={(event) => updateCurrent({ text: event.target.value, name: event.target.value })} /></label><label className="color-row">文字顏色<input type="color" value={current.textColor || "#ffffff"} onChange={(event) => updateCurrent({ textColor: event.target.value })} /></label><label className="range-label"><span>字體大小 <b>{current.fontSize || 42}px</b></span><input type="range" min="18" max="120" value={current.fontSize || 42} onChange={(event) => updateCurrent({ fontSize: Number(event.target.value) })} /></label></>}
-              {canOutline && <div className={`outline-editor ${current.outlineEnabled ? "active" : ""}`}>
+              {canOutline && <details className={`outline-editor ${current.outlineEnabled ? "active" : ""}`}>
+                <summary>物件外框</summary>
                 <div className="outline-heading"><div><strong>物件外框</strong><small>沿著武器輪廓加上實色邊框</small></div><label className="outline-switch"><input type="checkbox" checked={Boolean(current.outlineEnabled)} onChange={(event) => updateCurrent({ outlineEnabled: event.target.checked, outlineColor: current.outlineColor || "#f3a3b4", outlineWidth: current.outlineWidth || 10 })} /><span>{current.outlineEnabled ? "已開啟" : "開啟"}</span></label></div>
                 {current.outlineEnabled && <>
                   <div className="outline-color-row"><label>外框顏色<input aria-label="選擇外框顏色" type="color" value={current.outlineColor || "#f3a3b4"} onChange={(event) => updateCurrent({ outlineColor: event.target.value })} /></label><code>{(current.outlineColor || "#f3a3b4").toUpperCase()}</code></div>
                   <div className="color-presets" aria-label="常用外框顏色">{["#f3a3b4", "#ffffff", "#ff4655", "#f4d35e", "#58e5d5", "#111111"].map((color) => <button key={color} type="button" className={(current.outlineColor || "#f3a3b4").toLowerCase() === color ? "selected" : ""} style={{ backgroundColor: color }} aria-label={`外框顏色 ${color}`} onClick={() => updateCurrent({ outlineColor: color })} />)}</div>
                   <label className="range-label outline-range"><span>外框粗度 <b>{current.outlineWidth || 10}px</b></span><input aria-label="外框粗度" type="range" min="1" max="30" value={current.outlineWidth || 10} onChange={(event) => updateCurrent({ outlineWidth: Number(event.target.value) })} /></label>
                 </>}
-              </div>}
+              </details>}
               <label className="range-label"><span>旋轉角度 <b>{Math.round(current.rotation)}°</b></span><input type="range" min="-180" max="180" value={current.rotation} onChange={(event) => updateCurrent({ rotation: Number(event.target.value) })} /></label>
-              <label className="range-label"><span>寬度 <b>{Math.round(current.w)} px</b></span><input type="range" min="54" max="600" value={current.w} onChange={(event) => { const w = Number(event.target.value); updateCurrent({ w, h: current.h * w / current.w }); }} /></label>
+              <label className="field-label">寬度 px<input aria-label="物件寬度" type="number" min="54" max="1200" value={Math.round(current.w)} onChange={(event) => { const w = Math.max(54, Math.min(W, Number(event.target.value))); updateCurrent({ w, h: current.h * w / current.w }); }} /></label>
               <div className="object-actions"><button onClick={() => updateCurrent({ rotation: 0 })}>角度歸零</button><button onClick={bringSelectionToFront}>移到最上層</button></div>
             </> : <div className="no-selection"><span>◇</span><p><strong>尚未選取物件</strong><br />點擊單選、按住 Shift 加選，或在空白處拖曳框選多個造型。</p></div>}
           </div>
-          <div className="tips"><span>提示</span><p>右下角拖曳可縮放物件；匯入驗證網址只用於當次操作，不會儲存。</p></div>
-        </aside>
+
+              <div className="inspector-actions"><button title="複製選取項目" onClick={duplicateCurrent}><Copy size={18} />複製</button><button title="刪除選取項目" onClick={deleteCurrent}><Trash size={18} />刪除</button></div>
+              <div className="selection-shortcuts"><button aria-label="縮小選取項目" title="縮小" onClick={() => scaleSelection(.9)}><Minus size={17} /></button><button aria-label="放大選取項目" title="放大" onClick={() => scaleSelection(1.1)}><Plus size={17} /></button><button aria-label="水平對齊選取項目" title="水平對齊" onClick={alignSelection}><AlignCenterHorizontal size={17} /></button>{canOutline && <button title="切換外框" onClick={toggleSelectionOutline}>外框</button>}</div>
+            </aside>}
+          </div>
+          <div className="stage-foot"><span><Check size={13} /> 自動儲存在這個裝置</span><span>1200 × {canvasHeight} PX{layoutMode === "pages" ? ` · 第 ${currentPage + 1}/${pageCount} 頁` : ""}{bgUrl === BRAND_BACKGROUND_URL ? " · 透明背景" : ""}</span><span>拖曳移動 · Shift 加選 · 右下角縮放</span></div>
+          {currentExport && <div className="export-receipt" role="status"><Check size={15} /><span>{currentExport.format} 已產生</span><a href={currentExport.url} download={currentExport.filename}>重新下載 {currentExport.format}</a><button aria-label="關閉下載提示" onClick={() => setLastExport(null)}><X size={15} /></button></div>}
+        </section>
       </section>
 
       {libraryOpen && <div className="modal-backdrop" onMouseDown={() => setLibraryOpen(false)}>
         <section className="modal catalog-modal" role="dialog" aria-modal="true" aria-label="造型清單" onMouseDown={(event) => event.stopPropagation()}>
-          <div className="modal-head"><div><span className="eyebrow">VALORANT DATABASE</span><h2>造型清單</h2></div><button className="close-btn" onClick={() => setLibraryOpen(false)}>×</button></div>
-          <div className="catalog-toolbar"><label className="search"><span>⌕</span><input placeholder="搜尋造型名稱或武器" value={search} onChange={(event) => setSearch(event.target.value)} /></label><div className="tabs">{categoryTabs.map((tab) => <button key={tab.key} className={category === tab.key ? "active" : ""} onClick={() => setCategory(tab.key)}>{tab.label}</button>)}</div><span className="result-count">{filtered.length} 項</span></div>
+          <div className="modal-head"><div><span className="eyebrow">VALORANT DATABASE</span><h2>造型清單</h2></div><button className="close-btn" onClick={() => setLibraryOpen(false)} aria-label="關閉視窗"><X size={20} /></button></div>
+          <div className="catalog-toolbar"><label className="search"><MagnifyingGlass size={19} /><input placeholder="搜尋造型名稱或武器" value={search} onChange={(event) => setSearch(event.target.value)} /></label><div className="tabs">{categoryTabs.map((tab) => <button key={tab.key} className={category === tab.key ? "active" : ""} onClick={() => setCategory(tab.key)}>{tab.label}</button>)}</div><span className="result-count">{filtered.length} 項</span></div>
           <div className="modal-grid">{assetList(visibleCount)}</div>
           {visibleCount < filtered.length && <button className="load-more" onClick={() => setVisibleCount((value) => value + 80)}>顯示更多</button>}
         </section>
@@ -1530,7 +1507,7 @@ export default function Home() {
 
       {importOpen && <div className="modal-backdrop" onMouseDown={() => { if (!importing) { setImportOpen(false); setAuthUrl(""); } }}>
         <section className="modal import-modal" role="dialog" aria-modal="true" aria-label="匯入 Riot 造型" onMouseDown={(event) => event.stopPropagation()}>
-          <div className="modal-head"><div><span className="eyebrow">RIOT ACCOUNT IMPORT</span><h2>匯入功能</h2></div><button className="close-btn" disabled={importing} onClick={() => { setImportOpen(false); setAuthUrl(""); }}>×</button></div>
+          <div className="modal-head"><div><span className="eyebrow">RIOT ACCOUNT IMPORT</span><h2>匯入功能</h2></div><button className="close-btn" disabled={importing} onClick={() => { setImportOpen(false); setAuthUrl(""); }} aria-label="關閉視窗"><X size={20} /></button></div>
           <div className="experimental"><strong>實驗性功能</strong><p>本站會在你的瀏覽器中直接向 Riot 讀取造型收藏；不會上傳、記錄或儲存驗證網址與登入資料。</p></div>
           <ol className="auth-steps"><li><a href={RIOT_LOGIN_URL} target="_blank" rel="noopener noreferrer">開啟 Riot 官方登入頁 ↗</a>，完成登入。</li><li>登入後畫面可能顯示錯誤頁，這是正常的。複製瀏覽器網址列中的<strong>完整網址</strong>。</li><li>貼到下方欄位，選擇帳號分區後按「開始匯入」。</li></ol>
           <label className="auth-field">驗證網址<textarea id="auth_token_input" value={authUrl} onChange={(event) => setAuthUrl(event.target.value)} placeholder="https://playvalorant.com/opt_in#access_token=…" autoComplete="off" spellCheck={false} /></label>
@@ -1541,7 +1518,7 @@ export default function Home() {
         </section>
       </div>}
 
-      {toast && <div className="toast">✓ {toast}</div>}
+      {toast && <div className="toast" role="status"><Check size={18} /> {toast}</div>}
     </main>
   );
 }
