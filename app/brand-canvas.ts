@@ -1,5 +1,26 @@
 export const BRAND_BACKGROUND_URL = "./brand/background.png";
 export const BRAND_LOGO_URL = "./brand/logo-transparent.png";
+export const COLLECTION_FRAME_URL = "./brand/collection-frame.png";
+
+/** Transparent category frames sit over the Logo and below every scene object. */
+export function drawCollectionFrame(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  pageHeight: number,
+  frame: HTMLImageElement,
+) {
+  ctx.save();
+  ctx.globalCompositeOperation = "source-over";
+  for (let top = 0; top < height; top += pageHeight) {
+    const regionHeight = Math.min(pageHeight, height - top);
+    const ratio = Math.min(width / frame.naturalWidth, regionHeight / frame.naturalHeight);
+    const w = frame.naturalWidth * ratio;
+    const h = frame.naturalHeight * ratio;
+    ctx.drawImage(frame, (width - w) / 2, top + (regionHeight - h) / 2, w, h);
+  }
+  ctx.restore();
+}
 
 export type BrandSettings = { enabled: boolean; opacity: number; scale: number; showMetadata: boolean };
 export const DEFAULT_BRAND_SETTINGS: BrandSettings = { enabled: true, opacity: 0.25, scale: 0.86, showMetadata: false };

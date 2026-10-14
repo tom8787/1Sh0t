@@ -12,7 +12,7 @@ import {
   useState,
 } from "react";
 import { AlignCenterHorizontal, ArrowDown, ArrowUp, ArrowsClockwise, ArrowsOutSimple, Check, Copy, DownloadSimple, FolderSimple, Image as ImageIcon, MagnifyingGlass, Minus, Plus, SlidersHorizontal, TextT, Trash, UploadSimple, Wrench, X } from "@phosphor-icons/react";
-import { BRAND_BACKGROUND_URL, BRAND_LOGO_URL, drawBrandBackground, readBrandSettings, type BrandSettings } from "./brand-canvas";
+import { BRAND_BACKGROUND_URL, BRAND_LOGO_URL, COLLECTION_FRAME_URL, drawBrandBackground, drawCollectionFrame, readBrandSettings, type BrandSettings } from "./brand-canvas";
 
 type AssetType = "rifle" | "sniper" | "sidearm" | "melee" | "bundle" | "card" | "charm" | "image" | "text";
 type CatalogCategory = "all" | "weapons" | "bundle" | "card" | "charm";
@@ -264,14 +264,16 @@ function drawScene(
   brandLogo?: HTMLImageElement,
   brandSettings?: BrandSettings,
   transparentBackground = false,
+  framedBackground = false,
 ) {
   ctx.clearRect(0, 0, W, height);
+  if (brandSettings) drawBrandBackground(ctx, W, height, H, brandLogo, brandSettings);
   if (bgImage) {
-    drawCoverImage(ctx, bgImage, W, height);
+    if (framedBackground) drawCollectionFrame(ctx, W, height, H, bgImage);
+    else drawCoverImage(ctx, bgImage, W, height);
   } else {
     // A missing/transparent background must remain transparent in the exported PNG.
   }
-  if (brandSettings) drawBrandBackground(ctx, W, height, H, brandLogo, brandSettings);
   if (brandSettings?.showMetadata) {
     ctx.shadowColor = "rgba(0,0,0,.82)";
     ctx.shadowBlur = 10;
@@ -512,7 +514,7 @@ export default function Home() {
   const [vp, setVp] = useState(() => String(savedWallet()?.vp ?? 475));
   const [rp, setRp] = useState(() => String(savedWallet()?.rp ?? 90));
   const [kc, setKc] = useState(() => String(savedWallet()?.kc ?? 0));
-  const [bgUrl, setBgUrl] = useState(BRAND_BACKGROUND_URL);
+  const [bgUrl, setBgUrl] = useState(COLLECTION_FRAME_URL);
   const [newText, setNewText] = useState("");
   const [toast, setToast] = useState("");
   const [lastExport, setLastExport] = useState<{ url: string; filename: string; format: "PNG" | "ZIP"; items: SceneItem[]; settings: BrandSettings; background: string; mode: LayoutMode; page: number } | null>(null);
@@ -769,7 +771,7 @@ export default function Home() {
 
   useEffect(() => {
     const ctx = canvasRef.current?.getContext("2d");
-    if (ctx) drawScene(ctx, visibleItems, selectedIds, vp, rp, kc, canvasHeight, bgImageRef.current, imageRefs.current, selectionRect, brandLogoRef.current, brandSettings, bgUrl === BRAND_BACKGROUND_URL);
+    if (ctx) drawScene(ctx, visibleItems, selectedIds, vp, rp, kc, canvasHeight, bgImageRef.current, imageRefs.current, selectionRect, brandLogoRef.current, brandSettings, bgUrl === BRAND_BACKGROUND_URL || bgUrl === COLLECTION_FRAME_URL, bgUrl === COLLECTION_FRAME_URL);
   }, [visibleItems, selectedIds, vp, rp, kc, bgUrl, imageRevision, canvasHeight, selectionRect, brandSettings, activePage]);
 
   const addAsset = (asset: LibraryAsset) => {
@@ -1002,7 +1004,7 @@ export default function Home() {
     if (!ctx) throw new Error("無法建立匯出畫布");
     const exportItems = layoutMode === "pages" ? items.filter((item) => (item.layoutPage || 0) === page) : items;
     if (exportItems.some((item) => item.imageUrl && !imageRefs.current.has(item.uid))) throw new Error("素材圖片尚未載入完成");
-    drawScene(ctx, exportItems, [], vp, rp, kc, canvas.height, bgImageRef.current, imageRefs.current, null, brandLogoRef.current, brandSettings, bgUrl === BRAND_BACKGROUND_URL);
+    drawScene(ctx, exportItems, [], vp, rp, kc, canvas.height, bgImageRef.current, imageRefs.current, null, brandLogoRef.current, brandSettings, bgUrl === BRAND_BACKGROUND_URL || bgUrl === COLLECTION_FRAME_URL, bgUrl === COLLECTION_FRAME_URL);
     return canvas;
   };
 
@@ -1351,6 +1353,9 @@ export default function Home() {
 
   const backgroundControls = <div className="background-settings">
     <div className="settings-intro"><h2>畫布背景</h2><p>背景與 Logo 都會一起匯出。</p></div>
+    <button className={`background-preset ${bgUrl === COLLECTION_FRAME_URL ? "active" : ""}`} onClick={() => { setBgUrl(COLLECTION_FRAME_URL); flash("已套用透明分類框"); }}>
+      <img src={COLLECTION_FRAME_URL} alt="透明分類框" /><span><strong>透明分類框</strong><small>框內塗層覆在 Logo 上方</small></span>{bgUrl === COLLECTION_FRAME_URL && <Check size={18} />}
+    </button>
     <button className={`background-preset ${bgUrl === BRAND_BACKGROUND_URL ? "active" : ""}`} onClick={() => { setBgUrl(BRAND_BACKGROUND_URL); flash("已套用透明背景"); }}>
       <img src={BRAND_BACKGROUND_URL} alt="透明背景" /><span><strong>透明背景</strong><small>只輸出素材與 Logo</small></span>{bgUrl === BRAND_BACKGROUND_URL && <Check size={18} />}
     </button>
@@ -1491,7 +1496,7 @@ export default function Home() {
               <div className="selection-shortcuts"><button aria-label="縮小選取項目" title="縮小" onClick={() => scaleSelection(.9)}><Minus size={17} /></button><button aria-label="放大選取項目" title="放大" onClick={() => scaleSelection(1.1)}><Plus size={17} /></button><button aria-label="水平對齊選取項目" title="水平對齊" onClick={alignSelection}><AlignCenterHorizontal size={17} /></button>{canOutline && <button title="切換外框" onClick={toggleSelectionOutline}>外框</button>}</div>
             </aside>}
           </div>
-          <div className="stage-foot"><span><Check size={13} /> 自動儲存在這個裝置</span><span>1200 × {canvasHeight} PX{layoutMode === "pages" ? ` · 第 ${currentPage + 1}/${pageCount} 頁` : ""}{bgUrl === BRAND_BACKGROUND_URL ? " · 透明背景" : ""}</span><span>拖曳移動 · Shift 加選 · 右下角縮放</span></div>
+          <div className="stage-foot"><span><Check size={13} /> 自動儲存在這個裝置</span><span>1200 × {canvasHeight} PX{layoutMode === "pages" ? ` · 第 ${currentPage + 1}/${pageCount} 頁` : ""}{bgUrl === COLLECTION_FRAME_URL ? " · 透明分類框" : bgUrl === BRAND_BACKGROUND_URL ? " · 透明背景" : ""}</span><span>拖曳移動 · Shift 加選 · 右下角縮放</span></div>
           {currentExport && <div className="export-receipt" role="status"><Check size={15} /><span>{currentExport.format} 已產生</span><a href={currentExport.url} download={currentExport.filename}>重新下載 {currentExport.format}</a><button aria-label="關閉下載提示" onClick={() => setLastExport(null)}><X size={15} /></button></div>}
         </section>
       </section>
