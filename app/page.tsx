@@ -12,7 +12,7 @@ import {
   useState,
 } from "react";
 import { AlignCenterHorizontal, ArrowDown, ArrowUp, ArrowsClockwise, ArrowsOutSimple, Check, Copy, DownloadSimple, FolderSimple, Image as ImageIcon, MagnifyingGlass, Minus, Plus, SlidersHorizontal, TextT, Trash, UploadSimple, Wrench, X } from "@phosphor-icons/react";
-import { BRAND_BACKGROUND_URL, BRAND_LOGO_URL, COLLECTION_FRAME_URL, drawBrandBackground, drawCollectionFrame, readBrandSettings, type BrandSettings } from "./brand-canvas";
+import { BRAND_BACKGROUND_URL, BRAND_LOGO_URL, COLLECTION_FRAME_URL, arrangeCollectionItems, drawBrandBackground, drawCollectionFrame, readBrandSettings, type BrandSettings } from "./brand-canvas";
 
 type AssetType = "rifle" | "sniper" | "sidearm" | "melee" | "bundle" | "card" | "charm" | "image" | "text";
 type CatalogCategory = "all" | "weapons" | "bundle" | "card" | "charm";
@@ -24,6 +24,7 @@ type LibraryAsset = {
   label: string;
   colors: [string, string, string];
   imageUrl?: string;
+  weaponId?: string;
   levelIds?: string[];
   isEffect?: boolean;
 };
@@ -64,6 +65,7 @@ type ValorantSkin = {
 };
 
 type ValorantWeapon = {
+  uuid: string;
   displayName: string;
   category: string;
   skins: ValorantSkin[];
@@ -269,11 +271,11 @@ function drawScene(
   ctx.clearRect(0, 0, W, height);
   if (brandSettings) drawBrandBackground(ctx, W, height, H, brandLogo, brandSettings);
   if (bgImage) {
-    if (framedBackground) drawCollectionFrame(ctx, W, height, H, bgImage);
-    else drawCoverImage(ctx, bgImage, W, height);
+    if (!framedBackground) drawCoverImage(ctx, bgImage, W, height);
   } else {
     // A missing/transparent background must remain transparent in the exported PNG.
   }
+  if (framedBackground && brandSettings) drawCollectionFrame(ctx, W, height, H, brandSettings);
   if (brandSettings?.showMetadata) {
     ctx.shadowColor = "rgba(0,0,0,.82)";
     ctx.shadowBlur = 10;
@@ -367,75 +369,8 @@ function isWeaponItem(item: SceneItem) {
   return ["rifle", "sniper", "sidearm", "melee"].includes(item.type);
 }
 
-const WEAPON_ORDER = [
-  "制式手槍", "短管", "狂弒", "鬼魅", "警長",
-  "刺針", "惡靈", "重砲", "判官",
-  "鬥牛犬", "捍衛者", "幻象", "暴徒",
-  "神射", "盜賊", "間諜", "戰神", "奧丁", "近戰武器",
-];
-
 function arrangeGroupedItems(sceneItems: SceneItem[], mode: LayoutMode): LayoutResult {
-  const weaponItems = sceneItems.filter(isWeaponItem);
-  if (!weaponItems.length) return { items: sceneItems, height: H, pages: 1 };
-
-  const groups = new Map<string, SceneItem[]>();
-  weaponItems.forEach((item) => {
-    const label = item.label || "其他武器";
-    groups.set(label, [...(groups.get(label) || []), item]);
-  });
-  const orderedGroups = [...groups.entries()].sort(([a], [b]) => {
-    const aIndex = WEAPON_ORDER.indexOf(a);
-    const bIndex = WEAPON_ORDER.indexOf(b);
-    if (aIndex >= 0 || bIndex >= 0) return (aIndex < 0 ? 999 : aIndex) - (bIndex < 0 ? 999 : bIndex);
-    return a.localeCompare(b, "zh-TW");
-  });
-
-  const columns = 10;
-  const left = 32;
-  const top = 104;
-  const bottom = 26;
-  const headerHeight = 28;
-  const sectionGap = 12;
-  const cellW = (W - left * 2) / columns;
-  const itemHeight = 56;
-  const rowHeight = 64;
-  const arranged = new Map<string, SceneItem>();
-  let y = top;
-  let page = 0;
-
-  orderedGroups.forEach(([, rawItems]) => {
-    const groupItems = [...rawItems].sort((a, b) => a.name.localeCompare(b.name, "zh-TW"));
-    const rows = Math.ceil(groupItems.length / columns);
-    const sectionHeight = headerHeight + rows * rowHeight + sectionGap;
-    if (mode === "pages" && y > top && y + sectionHeight > H - bottom) {
-      page += 1;
-      y = top;
-    }
-    groupItems.forEach((item, index) => arranged.set(item.uid, {
-      ...item,
-      x: left + (index % columns) * cellW + 5,
-      y: y + headerHeight + Math.floor(index / columns) * rowHeight,
-      w: cellW - 10,
-      h: itemHeight,
-      rotation: 0,
-      layoutPage: mode === "pages" ? page : 0,
-    }));
-    y += sectionHeight;
-  });
-
-  let height = mode === "long" ? Math.max(H, Math.ceil(y + bottom)) : H;
-  if (mode === "single" && y + bottom > H) {
-    const scale = (H - top - bottom) / Math.max(1, y - top);
-    arranged.forEach((item, uid) => arranged.set(uid, {
-      ...item,
-      y: top + (item.y - top) * scale,
-      h: Math.max(12, item.h * scale),
-    }));
-    height = H;
-  }
-
-  const nextItems = sceneItems.map((item) => arranged.get(item.uid) || { ...item, layoutPage: 0 });
-  return { items: nextItems, height, pages: mode === "pages" ? page + 1 : 1 };
+  return arrangeCollectionItems(sceneItems, mode);
 }
 
 function savedScene(): SceneItem[] {
@@ -475,6 +410,7 @@ export default function Home() {
   const bgImageRef = useRef<HTMLImageElement | undefined>(undefined);
   const brandLogoRef = useRef<HTMLImageElement | undefined>(undefined);
   const [brandSettings, setBrandSettings] = useState(readBrandSettings);
+  const [frameColorDraft, setFrameColorDraft] = useState(() => readBrandSettings().frameColor);
   const [brandError, setBrandError] = useState("");
   const [libraryTab, setLibraryTab] = useState<"assets" | "background">("assets");
   const imageRefs = useRef(new Map<string, HTMLImageElement>());
@@ -492,7 +428,7 @@ export default function Home() {
 
   const [items, setItems] = useState<SceneItem[]>(() => {
     const savedItems = savedScene();
-    const needsLayoutMigration = typeof window !== "undefined" && !localStorage.getItem("loadout-lab-layout-mode");
+    const needsLayoutMigration = typeof window !== "undefined" && localStorage.getItem("1shot-slot-layout-version") !== "1";
     return needsLayoutMigration ? arrangeGroupedItems(savedItems, savedLayoutMode()).items : savedItems;
   });
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -501,7 +437,7 @@ export default function Home() {
   const [layoutMode, setLayoutMode] = useState<LayoutMode>(savedLayoutMode);
   const [canvasHeight, setCanvasHeight] = useState(() => {
     const savedItems = savedScene();
-    const needsLayoutMigration = typeof window !== "undefined" && !localStorage.getItem("loadout-lab-layout-mode");
+    const needsLayoutMigration = typeof window !== "undefined" && localStorage.getItem("1shot-slot-layout-version") !== "1";
     return needsLayoutMigration ? arrangeGroupedItems(savedItems, savedLayoutMode()).height : savedCanvasHeight();
   });
   const [currentPage, setCurrentPage] = useState(0);
@@ -587,6 +523,7 @@ export default function Home() {
             name: skin.displayName,
             type: weaponType(weapon.category),
             label: weapon.displayName,
+            weaponId: weapon.uuid,
             colors: colorsFromId(skin.uuid),
             imageUrl: skin.chromas?.find((chroma) => chroma.fullRender)?.fullRender || skin.levels?.find((level) => level.displayIcon)?.displayIcon || skin.displayIcon || undefined,
             levelIds: skin.levels?.map((level) => level.uuid.toLowerCase()) || [],
@@ -637,6 +574,7 @@ export default function Home() {
   useEffect(() => {
     localStorage.setItem("loadout-lab-layout-mode", layoutMode);
     localStorage.setItem("loadout-lab-canvas-height", String(canvasHeight));
+    localStorage.setItem("1shot-slot-layout-version", "1");
   }, [layoutMode, canvasHeight]);
 
   useEffect(() => {
@@ -664,6 +602,7 @@ export default function Home() {
   useEffect(() => {
     let active = true;
     bgImageRef.current = undefined;
+    if (bgUrl === COLLECTION_FRAME_URL) return;
     const image = new Image();
     image.onload = () => {
       if (!active) return;
@@ -789,9 +728,14 @@ export default function Home() {
     const p = presets[asset.type] || presets.image;
     uidSequence.current += 1;
     const item: SceneItem = { ...asset, uid: `${asset.id}-${uidSequence.current}`, ...p, rotation: 0, layoutPage: currentPage };
-    setItems((previous) => [...previous, item]);
+    if (isWeaponItem(item)) {
+      const arranged = arrangeGroupedItems([...items, item], layoutMode);
+      setItems(arranged.items);
+      setCanvasHeight(arranged.height);
+      setCurrentPage(arranged.items.find((entry) => entry.uid === item.uid)?.layoutPage || 0);
+    } else setItems((previous) => [...previous, item]);
     setSelected(item.uid);
-    flash(`${asset.name} 已加入畫布`);
+    flash(`${asset.name} ${isWeaponItem(item) ? "已加入對應框格" : "已加入畫布"}`);
   };
 
   const addText = (preset?: string) => {
@@ -832,7 +776,7 @@ export default function Home() {
     setCanvasHeight(arranged.height);
     setCurrentPage(0);
     setSelected(null);
-    flash("已依官方武器名稱重新分類排列");
+    flash("已放入各武器的對應框格");
   };
 
   const changeLayoutMode = (mode: LayoutMode) => {
@@ -996,7 +940,7 @@ export default function Home() {
   };
 
   const renderExportCanvas = (page = currentPage) => {
-    if ((brandSettings.enabled && !brandLogoRef.current) || !bgImageRef.current || loadingImages.current.size) throw new Error("圖片仍在載入");
+    if ((brandSettings.enabled && !brandLogoRef.current) || (bgUrl !== COLLECTION_FRAME_URL && !bgImageRef.current) || loadingImages.current.size) throw new Error("圖片仍在載入");
     const canvas = document.createElement("canvas");
     canvas.width = W;
     canvas.height = layoutMode === "long" ? canvasHeight : H;
@@ -1354,8 +1298,14 @@ export default function Home() {
   const backgroundControls = <div className="background-settings">
     <div className="settings-intro"><h2>畫布背景</h2><p>背景與 Logo 都會一起匯出。</p></div>
     <button className={`background-preset ${bgUrl === COLLECTION_FRAME_URL ? "active" : ""}`} onClick={() => { setBgUrl(COLLECTION_FRAME_URL); flash("已套用透明分類框"); }}>
-      <img src={COLLECTION_FRAME_URL} alt="透明分類框" /><span><strong>透明分類框</strong><small>框內塗層覆在 Logo 上方</small></span>{bgUrl === COLLECTION_FRAME_URL && <Check size={18} />}
+      <span aria-hidden="true" style={{ width: 40, height: 32, flexShrink: 0, border: `1px solid ${brandSettings.frameColor}`, background: `${brandSettings.frameColor}2e` }} /><span><strong>透明分類框</strong><small>半透明框格 · 顏色自由調整</small></span>{bgUrl === COLLECTION_FRAME_URL && <Check size={18} />}
     </button>
+    {bgUrl === COLLECTION_FRAME_URL && <div className="control-section">
+      <h3>框格樣式</h3>
+      <label className="range-label"><span>框格顏色</span><span style={{ display: "flex", gap: 8 }}><input aria-label="框格顏色" type="color" value={brandSettings.frameColor} style={{ width: 48, height: 36, cursor: "pointer" }} onChange={(event) => { setFrameColorDraft(event.target.value); setBrandSettings((settings) => ({ ...settings, frameColor: event.target.value })); }} /><input aria-label="框格色碼" type="text" maxLength={7} value={frameColorDraft} style={{ width: "100%", minWidth: 0, height: 36, color: "#53647a", background: "#fff", border: "1px solid #dce3ed", borderRadius: 5, padding: "0 10px" }} onChange={(event) => { const value = event.target.value; setFrameColorDraft(value); if (/^#[0-9a-f]{6}$/i.test(value)) setBrandSettings((settings) => ({ ...settings, frameColor: value })); }} onBlur={() => setFrameColorDraft(brandSettings.frameColor)} /></span></label>
+      <label className="range-label"><span>框格不透明度 <b>{Math.round(brandSettings.frameOpacity * 100)}%</b></span><input aria-label="框格不透明度" type="range" min="0" max="100" value={Math.round(brandSettings.frameOpacity * 100)} onChange={(event) => setBrandSettings((settings) => ({ ...settings, frameOpacity: Number(event.target.value) / 100 }))} /></label>
+      <p className="settings-note">純色半透明框格疊在 Logo 上方。匯入與自動排列會依武器名稱放入框內；收藏較多可切換多頁。</p>
+    </div>}
     <button className={`background-preset ${bgUrl === BRAND_BACKGROUND_URL ? "active" : ""}`} onClick={() => { setBgUrl(BRAND_BACKGROUND_URL); flash("已套用透明背景"); }}>
       <img src={BRAND_BACKGROUND_URL} alt="透明背景" /><span><strong>透明背景</strong><small>只輸出素材與 Logo</small></span>{bgUrl === BRAND_BACKGROUND_URL && <Check size={18} />}
     </button>
