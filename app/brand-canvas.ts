@@ -1,6 +1,20 @@
 export const BRAND_BACKGROUND_URL = "./brand/background.png";
 export const BRAND_LOGO_URL = "./brand/logo-transparent.png";
 export const COLLECTION_FRAME_URL = "./brand/collection-frame.png";
+export const CANVAS_WIDTH = 1200;
+export const COLLECTION_HEIGHT = 760;
+export const TITLE_HEIGHT = 120;
+export const PAGE_HEIGHT = COLLECTION_HEIGHT + TITLE_HEIGHT;
+export const PREVIEW_SCALE = 2;
+
+export function exportDimensions(height: number, scale: number) {
+  const width = CANVAS_WIDTH * scale;
+  const outputHeight = Math.round(height * scale);
+  if (width > 16384 || outputHeight > 16384 || width * outputHeight > 64_000_000) {
+    throw new Error("長圖超出高畫質匯出上限，請切換多頁並匯出 ZIP。");
+  }
+  return { width, height: outputHeight };
+}
 
 export const COLLECTION_SECTIONS = [
   { title: "隨身武器", x: 40, top: 50, bottom: 730, weapons: [
@@ -34,10 +48,15 @@ export const COLLECTION_SECTIONS = [
 
 export const COLLECTION_SLOTS = COLLECTION_SECTIONS.flatMap((section) => {
   const h = (section.bottom - section.top - 12 * (section.weapons.length - 1)) / section.weapons.length;
-  return section.weapons.map(([weaponId, label], index) => ({ weaponId, label, x: section.x, y: section.top + index * (h + 12), w: 256, h }));
+  return section.weapons.map(([weaponId, label], index) => ({ weaponId, label, x: section.x, y: TITLE_HEIGHT + section.top + index * (h + 12), w: 256, h }));
 });
 
 type CollectionItem = { uid: string; type: string; label: string; weaponId?: string; name: string; x: number; y: number; w: number; h: number; rotation: number; layoutPage?: number };
+
+/** Preserve manual placements while adding title space to existing 760px sheets. */
+export function migrateTitleSpace<T extends CollectionItem>(items: T[], mode: "single" | "long" | "pages"): T[] {
+  return items.map((item) => ({ ...item, y: item.y + TITLE_HEIGHT * (mode === "long" ? Math.floor(item.y / COLLECTION_HEIGHT) + 1 : 1) }));
+}
 
 /** Import, manual additions and auto-arrange use the exact same rectangles as rendering. */
 export function arrangeCollectionItems<T extends CollectionItem>(items: T[], mode: "single" | "long" | "pages") {
@@ -64,14 +83,14 @@ export function arrangeCollectionItems<T extends CollectionItem>(items: T[], mod
       const gap = Math.min(3, w / 8, h / 8);
       chunk.forEach((item, index) => arranged.set(item.uid, {
         ...item, x: slot.x + 10 + index % columns * w + gap,
-        y: slot.y + 24 + Math.floor(index / columns) * h + gap + (mode === "long" ? sheet * 760 : 0),
+        y: slot.y + 24 + Math.floor(index / columns) * h + gap + (mode === "long" ? sheet * PAGE_HEIGHT : 0),
         w: w - gap * 2, h: h - gap * 2, rotation: 0, layoutPage: mode === "pages" ? sheet : 0,
       }));
     }
   });
   const nextItems = items.map((item) => arranged.get(item.uid) || item);
   if (mode === "pages") pages = Math.max(pages, ...nextItems.map((item) => (item.layoutPage || 0) + 1));
-  return { items: nextItems, height: mode === "long" ? pages * 760 : 760, pages: mode === "pages" ? pages : 1 };
+  return { items: nextItems, height: mode === "long" ? pages * PAGE_HEIGHT : PAGE_HEIGHT, pages: mode === "pages" ? pages : 1 };
 }
 
 /** Pure translucent rectangles, drawn over the Logo without baked-in texture. */
@@ -88,12 +107,12 @@ export function drawCollectionFrame(
     const regionHeight = Math.min(pageHeight, height - top);
     ctx.save();
     ctx.translate(0, top);
-    ctx.scale(width / 1200, regionHeight / 760);
+    ctx.scale(width / CANVAS_WIDTH, regionHeight / PAGE_HEIGHT);
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.font = '700 18px Arial, "Microsoft JhengHei", sans-serif';
     ctx.fillStyle = "#53647a";
-    COLLECTION_SECTIONS.forEach((section) => ctx.fillText(section.title, section.x + 128, section.top - 21));
+    COLLECTION_SECTIONS.forEach((section) => ctx.fillText(section.title, section.x + 128, TITLE_HEIGHT + section.top - 21));
     COLLECTION_SLOTS.forEach((slot) => {
       ctx.globalAlpha = settings.frameOpacity;
       ctx.fillStyle = settings.frameColor;
@@ -113,8 +132,8 @@ export function drawCollectionFrame(
   ctx.restore();
 }
 
-export type BrandSettings = { enabled: boolean; opacity: number; scale: number; showMetadata: boolean; frameColor: string; frameOpacity: number };
-export const DEFAULT_BRAND_SETTINGS: BrandSettings = { enabled: true, opacity: 0.25, scale: 0.86, showMetadata: false, frameColor: "#8494a7", frameOpacity: 0.18 };
+export type BrandSettings = { enabled: boolean; opacity: number; scale: number; showMetadata: boolean; frameColor: string; frameOpacity: number; title: string; titleColor: string; exportScale: number };
+export const DEFAULT_BRAND_SETTINGS: BrandSettings = { enabled: true, opacity: 0.25, scale: 0.86, showMetadata: false, frameColor: "#8494a7", frameOpacity: 0.18, title: "", titleColor: "#243044", exportScale: 3 };
 
 export function readBrandSettings(): BrandSettings {
   if (typeof window === "undefined") return DEFAULT_BRAND_SETTINGS;
@@ -128,10 +147,37 @@ export function readBrandSettings(): BrandSettings {
       showMetadata: saved.showMetadata === true,
       frameColor: typeof saved.frameColor === "string" && /^#[0-9a-f]{6}$/i.test(saved.frameColor) ? saved.frameColor : DEFAULT_BRAND_SETTINGS.frameColor,
       frameOpacity: Number.isFinite(saved.frameOpacity) ? Math.max(0, Math.min(1, saved.frameOpacity)) : DEFAULT_BRAND_SETTINGS.frameOpacity,
+      title: typeof saved.title === "string" ? saved.title.slice(0, 80) : "",
+      titleColor: typeof saved.titleColor === "string" && /^#[0-9a-f]{6}$/i.test(saved.titleColor) ? saved.titleColor : DEFAULT_BRAND_SETTINGS.titleColor,
+      exportScale: [2, 3, 4].includes(saved.exportScale) ? saved.exportScale : DEFAULT_BRAND_SETTINGS.exportScale,
     };
   } catch {
     return DEFAULT_BRAND_SETTINGS;
   }
+}
+
+export function drawPageTitle(ctx: CanvasRenderingContext2D, width: number, height: number, settings: BrandSettings) {
+  if (!settings.title.trim()) return;
+  ctx.save();
+  ctx.fillStyle = settings.titleColor;
+  ctx.font = '700 32px Arial, "Microsoft JhengHei", sans-serif';
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  const lines: string[] = [];
+  let line = "";
+  for (const character of settings.title.replace(/\r/g, "")) {
+    if (character === "\n" || ctx.measureText(line + character).width > width - 80) {
+      lines.push(line);
+      line = character === "\n" ? "" : character;
+    } else line += character;
+  }
+  if (line || !lines.length) lines.push(line);
+  const visible = lines.slice(0, 2);
+  if (lines.length > 2) visible[1] = visible[1].slice(0, -1) + "…";
+  for (let top = 0; top < height; top += PAGE_HEIGHT) {
+    visible.forEach((text, index) => ctx.fillText(text, width / 2, top + TITLE_HEIGHT / 2 + (index - (visible.length - 1) / 2) * 42, width - 80));
+  }
+  ctx.restore();
 }
 
 /** Shared by the editor and every PNG/ZIP page; artwork is drawn behind scene objects. */
@@ -148,11 +194,11 @@ export function drawBrandBackground(
   ctx.globalCompositeOperation = "source-over";
   ctx.globalAlpha = settings.opacity;
   for (let top = 0; top < height; top += pageHeight) {
-    const regionHeight = Math.min(pageHeight, height - top);
+    const regionHeight = Math.max(0, Math.min(pageHeight, height - top) - TITLE_HEIGHT);
     const ratio = Math.min(width * settings.scale / logo.naturalWidth, regionHeight * 0.8 / logo.naturalHeight);
     const w = logo.naturalWidth * ratio;
     const h = logo.naturalHeight * ratio;
-    ctx.drawImage(logo, (width - w) / 2, top + (regionHeight - h) / 2, w, h);
+    ctx.drawImage(logo, (width - w) / 2, top + TITLE_HEIGHT + (regionHeight - h) / 2, w, h);
   }
   ctx.restore();
 }

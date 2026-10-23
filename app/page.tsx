@@ -12,7 +12,7 @@ import {
   useState,
 } from "react";
 import { AlignCenterHorizontal, ArrowDown, ArrowUp, ArrowsClockwise, ArrowsOutSimple, Check, Copy, DownloadSimple, FolderSimple, Image as ImageIcon, MagnifyingGlass, Minus, Plus, SlidersHorizontal, TextT, Trash, UploadSimple, Wrench, X } from "@phosphor-icons/react";
-import { BRAND_BACKGROUND_URL, BRAND_LOGO_URL, COLLECTION_FRAME_URL, arrangeCollectionItems, drawBrandBackground, drawCollectionFrame, readBrandSettings, type BrandSettings } from "./brand-canvas";
+import { BRAND_BACKGROUND_URL, BRAND_LOGO_URL, COLLECTION_FRAME_URL, CANVAS_WIDTH, PAGE_HEIGHT, TITLE_HEIGHT, PREVIEW_SCALE, COLLECTION_HEIGHT, exportDimensions, migrateTitleSpace, drawPageTitle, arrangeCollectionItems, drawBrandBackground, drawCollectionFrame, readBrandSettings, type BrandSettings } from "./brand-canvas";
 
 type AssetType = "rifle" | "sniper" | "sidearm" | "melee" | "bundle" | "card" | "charm" | "image" | "text";
 type CatalogCategory = "all" | "weapons" | "bundle" | "card" | "charm";
@@ -109,8 +109,8 @@ type MatchSummary = {
   playedAt: number;
 };
 
-const W = 1200;
-const H = 760;
+const W = CANVAS_WIDTH;
+const H = PAGE_HEIGHT;
 const DEFAULT_THEME_UUID = "5a629df4-4765-0214-bd40-fbb96542941f";
 const CLIENT_PLATFORM = "ew0KCSJwbGF0Zm9ybVR5cGUiOiAiUEMiLA0KCSJwbGF0Zm9ybU9TIjogIldpbmRvd3MiLA0KCSJwbGF0Zm9ybU9TVmVyc2lvbiI6ICIxMC4wLjE5MDQ1LjEuMjU2LjY0Yml0IiwNCgkicGxhdGZvcm1DaGlwc2V0IjogIlVua25vd24iDQp9";
 const RIOT_LOGIN_URL = "https://auth.riotgames.com/authorize?redirect_uri=https%3A%2F%2Fplayvalorant.com%2Fopt_in&client_id=play-valorant-web-prod&response_type=token%20id_token&nonce=1&scope=account%20openid";
@@ -174,8 +174,10 @@ function drawOutlinedImage(
   const outlineWidth = Math.max(1, width);
   const pad = Math.ceil(outlineWidth + 3);
   const mask = document.createElement("canvas");
-  mask.width = Math.ceil(w + pad * 2);
-  mask.height = Math.ceil(h + pad * 2);
+  const transform = ctx.getTransform();
+  const pixelScale = Math.max(1, Math.hypot(transform.a, transform.b), Math.hypot(transform.c, transform.d));
+  mask.width = Math.ceil((w + pad * 2) * pixelScale);
+  mask.height = Math.ceil((h + pad * 2) * pixelScale);
   const maskContext = mask.getContext("2d");
 
   if (!maskContext) {
@@ -184,6 +186,8 @@ function drawOutlinedImage(
   }
 
   maskContext.save();
+  maskContext.scale(pixelScale, pixelScale);
+  maskContext.imageSmoothingQuality = "high";
   maskContext.translate(pad, pad);
   drawContainedImage(maskContext, image, w, h);
   maskContext.restore();
@@ -197,7 +201,7 @@ function drawOutlinedImage(
     const steps = Math.max(24, Math.ceil(radius * 5));
     for (let step = 0; step < steps; step += 1) {
       const angle = step * Math.PI * 2 / steps;
-      ctx.drawImage(mask, -pad + Math.cos(angle) * radius, -pad + Math.sin(angle) * radius);
+      ctx.drawImage(mask, -pad + Math.cos(angle) * radius, -pad + Math.sin(angle) * radius, mask.width / pixelScale, mask.height / pixelScale);
     }
   }
 
@@ -269,20 +273,31 @@ function drawScene(
   framedBackground = false,
 ) {
   ctx.clearRect(0, 0, W, height);
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
   if (brandSettings) drawBrandBackground(ctx, W, height, H, brandLogo, brandSettings);
   if (bgImage) {
-    if (!framedBackground) drawCoverImage(ctx, bgImage, W, height);
+    if (!framedBackground) for (let top = 0; top < height; top += H) {
+      ctx.save();
+      ctx.translate(0, top + TITLE_HEIGHT);
+      ctx.beginPath();
+      ctx.rect(0, 0, W, H - TITLE_HEIGHT);
+      ctx.clip();
+      drawCoverImage(ctx, bgImage, W, H - TITLE_HEIGHT);
+      ctx.restore();
+    }
   } else {
     // A missing/transparent background must remain transparent in the exported PNG.
   }
   if (framedBackground && brandSettings) drawCollectionFrame(ctx, W, height, H, brandSettings);
+  if (brandSettings) drawPageTitle(ctx, W, height, brandSettings);
   if (brandSettings?.showMetadata) {
     ctx.shadowColor = "rgba(0,0,0,.82)";
     ctx.shadowBlur = 10;
     ctx.textAlign = "right";
     ctx.fillStyle = transparentBackground ? "#53647a" : "#d7e8ef";
     ctx.font = "700 18px Arial, sans-serif";
-    ctx.fillText(`VP  ${vp || "0"}     RP  ${rp || "0"}     KC  ${kc || "0"}`, W - 40, 52);
+    ctx.fillText(`VP  ${vp || "0"}     RP  ${rp || "0"}     KC  ${kc || "0"}`, W - 40, TITLE_HEIGHT - 16);
     ctx.textAlign = "left";
     ctx.shadowBlur = 0;
 
@@ -404,6 +419,17 @@ function savedWallet() {
   }
 }
 
+function initialLayout(): LayoutResult {
+  const saved = savedScene();
+  const mode = savedLayoutMode();
+  const version = typeof window === "undefined" ? "2" : localStorage.getItem("1shot-slot-layout-version");
+  if (version === "2") return { items: saved, height: mode === "long" ? savedCanvasHeight() : H, pages: 1 };
+  const migrated = migrateTitleSpace(saved, mode);
+  if (version !== "1") return arrangeGroupedItems(migrated, mode);
+  const previousHeight = Math.max(COLLECTION_HEIGHT, Number(localStorage.getItem("loadout-lab-canvas-height")) || COLLECTION_HEIGHT);
+  return { items: migrated, height: mode === "long" ? Math.ceil(previousHeight / COLLECTION_HEIGHT) * H : H, pages: 1 };
+}
+
 export default function Home() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const libraryScrollRef = useRef<HTMLDivElement>(null);
@@ -426,20 +452,12 @@ export default function Home() {
     baseSelection: string[];
   } | null>(null);
 
-  const [items, setItems] = useState<SceneItem[]>(() => {
-    const savedItems = savedScene();
-    const needsLayoutMigration = typeof window !== "undefined" && localStorage.getItem("1shot-slot-layout-version") !== "1";
-    return needsLayoutMigration ? arrangeGroupedItems(savedItems, savedLayoutMode()).items : savedItems;
-  });
+  const [items, setItems] = useState<SceneItem[]>(() => initialLayout().items);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const setSelected = useCallback((uid: string | null) => setSelectedIds(uid ? [uid] : []), []);
   const [selectionRect, setSelectionRect] = useState<SelectionRect | null>(null);
   const [layoutMode, setLayoutMode] = useState<LayoutMode>(savedLayoutMode);
-  const [canvasHeight, setCanvasHeight] = useState(() => {
-    const savedItems = savedScene();
-    const needsLayoutMigration = typeof window !== "undefined" && localStorage.getItem("1shot-slot-layout-version") !== "1";
-    return needsLayoutMigration ? arrangeGroupedItems(savedItems, savedLayoutMode()).height : savedCanvasHeight();
-  });
+  const [canvasHeight, setCanvasHeight] = useState(() => initialLayout().height);
   const [currentPage, setCurrentPage] = useState(0);
   const [catalog, setCatalog] = useState<LibraryAsset[]>([]);
   const [category, setCategory] = useState<CatalogCategory>("all");
@@ -574,7 +592,7 @@ export default function Home() {
   useEffect(() => {
     localStorage.setItem("loadout-lab-layout-mode", layoutMode);
     localStorage.setItem("loadout-lab-canvas-height", String(canvasHeight));
-    localStorage.setItem("1shot-slot-layout-version", "1");
+    localStorage.setItem("1shot-slot-layout-version", "2");
   }, [layoutMode, canvasHeight]);
 
   useEffect(() => {
@@ -710,7 +728,10 @@ export default function Home() {
 
   useEffect(() => {
     const ctx = canvasRef.current?.getContext("2d");
-    if (ctx) drawScene(ctx, visibleItems, selectedIds, vp, rp, kc, canvasHeight, bgImageRef.current, imageRefs.current, selectionRect, brandLogoRef.current, brandSettings, bgUrl === BRAND_BACKGROUND_URL || bgUrl === COLLECTION_FRAME_URL, bgUrl === COLLECTION_FRAME_URL);
+    if (ctx) {
+      ctx.setTransform(PREVIEW_SCALE, 0, 0, PREVIEW_SCALE, 0, 0);
+      drawScene(ctx, visibleItems, selectedIds, vp, rp, kc, canvasHeight, bgImageRef.current, imageRefs.current, selectionRect, brandLogoRef.current, brandSettings, bgUrl === BRAND_BACKGROUND_URL || bgUrl === COLLECTION_FRAME_URL, bgUrl === COLLECTION_FRAME_URL);
+    }
   }, [visibleItems, selectedIds, vp, rp, kc, bgUrl, imageRevision, canvasHeight, selectionRect, brandSettings, activePage]);
 
   const addAsset = (asset: LibraryAsset) => {
@@ -745,7 +766,7 @@ export default function Home() {
     const item: SceneItem = {
       id: `text-${uidSequence.current}`, uid: `text-${uidSequence.current}`, name: value, text: value, type: "text", label: "自訂文字",
       colors: ["#ffffff", "#ffffff", "#ffffff"], textColor: "#243044", fontSize: 42,
-      x: 430, y: 600, w: Math.min(520, Math.max(180, value.length * 48)), h: 64, rotation: 0, layoutPage: currentPage,
+      x: 220, y: (layoutMode === "long" ? Math.floor(canvasHeight / H - 1) * H : 0) + 28, w: 760, h: 64, rotation: 0, layoutPage: currentPage,
     };
     setItems((previous) => [...previous, item]);
     setSelected(item.uid);
@@ -942,13 +963,16 @@ export default function Home() {
   const renderExportCanvas = (page = currentPage) => {
     if ((brandSettings.enabled && !brandLogoRef.current) || (bgUrl !== COLLECTION_FRAME_URL && !bgImageRef.current) || loadingImages.current.size) throw new Error("圖片仍在載入");
     const canvas = document.createElement("canvas");
-    canvas.width = W;
-    canvas.height = layoutMode === "long" ? canvasHeight : H;
+    const logicalHeight = layoutMode === "long" ? canvasHeight : H;
+    const dimensions = exportDimensions(logicalHeight, brandSettings.exportScale);
+    canvas.width = dimensions.width;
+    canvas.height = dimensions.height;
     const ctx = canvas.getContext("2d");
     if (!ctx) throw new Error("無法建立匯出畫布");
+    ctx.scale(brandSettings.exportScale, brandSettings.exportScale);
     const exportItems = layoutMode === "pages" ? items.filter((item) => (item.layoutPage || 0) === page) : items;
     if (exportItems.some((item) => item.imageUrl && !imageRefs.current.has(item.uid))) throw new Error("素材圖片尚未載入完成");
-    drawScene(ctx, exportItems, [], vp, rp, kc, canvas.height, bgImageRef.current, imageRefs.current, null, brandLogoRef.current, brandSettings, bgUrl === BRAND_BACKGROUND_URL || bgUrl === COLLECTION_FRAME_URL, bgUrl === COLLECTION_FRAME_URL);
+    drawScene(ctx, exportItems, [], vp, rp, kc, logicalHeight, bgImageRef.current, imageRefs.current, null, brandLogoRef.current, brandSettings, bgUrl === BRAND_BACKGROUND_URL || bgUrl === COLLECTION_FRAME_URL, bgUrl === COLLECTION_FRAME_URL);
     return canvas;
   };
 
@@ -960,9 +984,9 @@ export default function Home() {
       link.href = canvas.toDataURL("image/png");
       setLastExport({ url: link.href, filename: link.download, format: "PNG", items, settings: brandSettings, background: bgUrl, mode: layoutMode, page: currentPage });
       link.click();
-      flash(layoutMode === "pages" ? `第 ${currentPage + 1} 頁 PNG 已匯出` : "高畫質 PNG 已匯出");
-    } catch {
-      flash("圖片仍在載入，請稍後再匯出");
+      flash(`${canvas.width} × ${canvas.height} 高畫質 PNG 已匯出`);
+    } catch (error) {
+      flash(error instanceof Error ? error.message : "匯出失敗，請稍後重試");
     }
   };
 
@@ -983,8 +1007,8 @@ export default function Home() {
       setLastExport({ url: link.href, filename: link.download, format: "ZIP", items, settings: brandSettings, background: bgUrl, mode: layoutMode, page: currentPage });
       link.click();
       flash(`已匯出 ${pageCount} 頁 ZIP`);
-    } catch {
-      flash("多頁匯出失敗，請稍後再試");
+    } catch (error) {
+      flash(error instanceof Error ? error.message : "多頁匯出失敗，請稍後再試");
     }
   };
 
@@ -1297,6 +1321,7 @@ export default function Home() {
 
   const backgroundControls = <div className="background-settings">
     <div className="settings-intro"><h2>畫布背景</h2><p>背景與 Logo 都會一起匯出。</p></div>
+    <label className="color-row">上方文字顏色<input aria-label="上方文字顏色" type="color" value={brandSettings.titleColor} onChange={(event) => setBrandSettings((settings) => ({ ...settings, titleColor: event.target.value }))} /></label>
     <button className={`background-preset ${bgUrl === COLLECTION_FRAME_URL ? "active" : ""}`} onClick={() => { setBgUrl(COLLECTION_FRAME_URL); flash("已套用透明分類框"); }}>
       <span aria-hidden="true" style={{ width: 40, height: 32, flexShrink: 0, border: `1px solid ${brandSettings.frameColor}`, background: `${brandSettings.frameColor}2e` }} /><span><strong>透明分類框</strong><small>半透明框格 · 顏色自由調整</small></span>{bgUrl === COLLECTION_FRAME_URL && <Check size={18} />}
     </button>
@@ -1414,9 +1439,14 @@ export default function Home() {
             <div className="canvas-tools"><button aria-label="自動排列" title="自動排列收藏" disabled={!items.some(isWeaponItem)} onClick={arrangeCollection}><ArrowsOutSimple size={19} /></button><button aria-label="重設畫布" title="清空畫布" disabled={!items.length} onClick={() => { setItems([]); setSelected(null); flash("畫布已清空"); }}><ArrowsClockwise size={19} /></button></div>
           </div>
           {layoutMode === "pages" && <div className="page-controls"><button aria-label="上一頁" disabled={currentPage === 0} onClick={() => { setCurrentPage((page) => Math.max(0, page - 1)); setSelected(null); }}><ArrowUp size={16} /></button><strong>第 {currentPage + 1} / {pageCount} 頁</strong><button aria-label="下一頁" disabled={currentPage >= pageCount - 1} onClick={() => { setCurrentPage((page) => Math.min(pageCount - 1, page + 1)); setSelected(null); }}><ArrowDown size={16} /></button><button className="export-pages" onClick={() => void exportAllPages()}><DownloadSimple size={16} />全部頁面 ZIP</button></div>}
+          <div className="output-settings">
+            <label>圖片上方文字<textarea aria-label="圖片上方文字" rows={2} maxLength={80} placeholder="在這裡輸入標題、帳號介紹或備註…" value={brandSettings.title} onChange={(event) => setBrandSettings((settings) => ({ ...settings, title: event.target.value }))} /></label>
+            <label>匯出畫質<select aria-label="匯出畫質" value={brandSettings.exportScale} onChange={(event) => setBrandSettings((settings) => ({ ...settings, exportScale: Number(event.target.value) }))}><option value={2}>2 倍 · 2400 px 寬</option><option value={3}>3 倍 · 3600 px 寬（推薦）</option><option value={4}>4 倍 · 4800 px 寬</option></select></label>
+            <small>上方已預留文字空間，留空也能下載後自行加字。PNG 保留透明背景。</small>
+          </div>
           <div className="editor-stage">
             <div className={`canvas-wrap ${layoutMode === "long" ? "long-canvas" : ""}`}>
-              <canvas ref={canvasRef} width={W} height={canvasHeight} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp} aria-label="可拖曳並可框選多個造型的特戰收藏畫布" />
+              <canvas ref={canvasRef} width={W * PREVIEW_SCALE} height={canvasHeight * PREVIEW_SCALE} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp} aria-label="可拖曳並可框選多個造型的特戰收藏畫布" />
               {!items.length && <div className="empty-hint"><span>開始製作</span><strong>把你的收藏放上畫布</strong><small>選擇造型或匯入收藏，開始自由排版。</small><div><button onClick={openLibrary}><FolderSimple size={17} />選擇造型</button><button onClick={openImport}><UploadSimple size={17} />Riot 匯入</button></div></div>}
             </div>
             {current && <aside className="inspector-panel panel" aria-label="編輯選取項目">
@@ -1446,7 +1476,7 @@ export default function Home() {
               <div className="selection-shortcuts"><button aria-label="縮小選取項目" title="縮小" onClick={() => scaleSelection(.9)}><Minus size={17} /></button><button aria-label="放大選取項目" title="放大" onClick={() => scaleSelection(1.1)}><Plus size={17} /></button><button aria-label="水平對齊選取項目" title="水平對齊" onClick={alignSelection}><AlignCenterHorizontal size={17} /></button>{canOutline && <button title="切換外框" onClick={toggleSelectionOutline}>外框</button>}</div>
             </aside>}
           </div>
-          <div className="stage-foot"><span><Check size={13} /> 自動儲存在這個裝置</span><span>1200 × {canvasHeight} PX{layoutMode === "pages" ? ` · 第 ${currentPage + 1}/${pageCount} 頁` : ""}{bgUrl === COLLECTION_FRAME_URL ? " · 透明分類框" : bgUrl === BRAND_BACKGROUND_URL ? " · 透明背景" : ""}</span><span>拖曳移動 · Shift 加選 · 右下角縮放</span></div>
+          <div className="stage-foot"><span><Check size={13} /> 自動儲存在這個裝置</span><span>匯出 {W * brandSettings.exportScale} × {canvasHeight * brandSettings.exportScale} PX{layoutMode === "pages" ? ` · 第 ${currentPage + 1}/${pageCount} 頁` : ""}{bgUrl === COLLECTION_FRAME_URL ? " · 透明分類框" : bgUrl === BRAND_BACKGROUND_URL ? " · 透明背景" : ""}</span><span>拖曳移動 · Shift 加選 · 右下角縮放</span></div>
           {currentExport && <div className="export-receipt" role="status"><Check size={15} /><span>{currentExport.format} 已產生</span><a href={currentExport.url} download={currentExport.filename}>重新下載 {currentExport.format}</a><button aria-label="關閉下載提示" onClick={() => setLastExport(null)}><X size={15} /></button></div>}
         </section>
       </section>

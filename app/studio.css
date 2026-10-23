@@ -254,3 +254,11 @@ svg { flex-shrink: 0; }
   .stage-foot { font-size: 10px; }
   .modal-grid { grid-template-columns: 1fr; }
 }
+
+.output-settings { display: grid; grid-template-columns: minmax(0,1fr) 220px; gap: 10px 16px; margin: 0 0 18px; }
+.output-settings label { display: flex; flex-direction: column; gap: 6px; color: #53647a; font-size: 12px; font-weight: 600; }
+.output-settings textarea, .output-settings select { width: 100%; border: 1px solid #dce3ed; border-radius: 7px; background: #fff; color: #243044; padding: 10px 12px; font-size: 14px; line-height: 1.5; font-family: inherit; }
+.output-settings textarea { resize: vertical; min-height: 64px; font-family: inherit; }
+.output-settings select { height: 44px; }
+.output-settings small { grid-column: 1 / -1; color: #738094; font-size: 11px; }
+@media (max-width: 680px) { .output-settings { grid-template-columns: minmax(0,1fr); } }
